@@ -121,10 +121,14 @@ waste = st.number_input("Shingle waste %", value=6.0)
 order_squares = d["squares"] * (1 + waste / 100)
 shingle_bundles = math.ceil(order_squares * 3)
 
+starter_bundles = math.ceil(d["eave"] / 100)
+
+ridge_cap_bundles = math.ceil((d["ridge"] + d["hip"]) / 30)
 st.write(f"Shingles: {shingle_bundles} bundles")
+st.write(f"Starter: {starter_bundles} bundles")
+st.write(f"Ridge cap: {ridge_cap_bundles} bundles")
 
-
-st.subheader("3. Customer")
+st.subheader("4. Customer")
 customer = st.text_input("Customer name", placeholder="John Smith")
 email = st.text_input("Customer email (optional)", placeholder="customer@example.com")
 shingle = st.selectbox("Roofing system", ["Architectural Shingle", "Designer Shingle", "3-Tab Shingle"])
