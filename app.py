@@ -113,6 +113,16 @@ fields = [
 ]
 for key, label in fields:
     d[key] = st.number_input(label, min_value=0.0, value=float(d[key]), step=1.0, key=f"m_{key}")
+import math
+
+st.subheader("3. Material Takeoff")
+
+waste = st.number_input("Shingle waste %", value=6.0)
+order_squares = d["squares"] * (1 + waste / 100)
+shingle_bundles = math.ceil(order_squares * 3)
+
+st.write(f"Shingles: {shingle_bundles} bundles")
+
 
 st.subheader("3. Customer")
 customer = st.text_input("Customer name", placeholder="John Smith")
@@ -144,6 +154,7 @@ Replace listed flashing.
 Clean up roofing debris and magnet sweep the work area.""", height=160)
 
 st.subheader("4. Customer estimate")
+show_itemized = st.checkbox("Show itemized pricing on customer proposal", value=True)
 proposal_html = f"""
 <!doctype html><html><head><meta name='viewport' content='width=device-width,initial-scale=1'>
 <title>Roof Replacement Proposal</title>
@@ -162,7 +173,7 @@ th,td{{padding:10px;border-bottom:1px solid #ddd;text-align:left}} td:last-child
 <b>Roofing system:</b> {escape(shingle)}<br>
 <b>Predominant pitch:</b> {escape(d["pitch"] or '—')}<br>
 <b>EagleView report:</b> {escape(d["report"] or '—')}</p>
-<table><tr><th>Item</th><th>Quantity</th><th>Amount</th></tr>
+<table {'style="display:none"' if not show_itemized else ''}><tr><th>Item</th><th>Quantity</th><th>Amount</th></tr>
 {''.join(f'<tr><td>{escape(a)}</td><td>{escape(b)}</td><td>${c:,.2f}</td></tr>' for a,b,c in lines)}
 </table><div class='total'>Total: ${total:,.2f}</div>
 <h2>Scope of Work</h2><div class='scope'>{escape(scope)}</div>
