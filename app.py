@@ -124,9 +124,14 @@ shingle_bundles = math.ceil(order_squares * 3)
 starter_bundles = math.ceil(d["eave"] / 100)
 
 ridge_cap_bundles = math.ceil((d["ridge"] + d["hip"]) / 30)
+underlayment_rolls = math.ceil(d["squares"] / 10)
 st.write(f"Shingles: {shingle_bundles} bundles")
+
 st.write(f"Starter: {starter_bundles} bundles")
+
 st.write(f"Ridge cap: {ridge_cap_bundles} bundles")
+
+st.write(f"Underlayment: {underlayment_rolls} rolls")
 
 st.subheader("4. Customer")
 customer = st.text_input("Customer name", placeholder="John Smith")
