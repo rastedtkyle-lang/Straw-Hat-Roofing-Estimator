@@ -132,7 +132,8 @@ st.write(f"Starter: {starter_bundles} bundles")
 st.write(f"Ridge cap: {ridge_cap_bundles} bundles")
 
 st.write(f"Underlayment: {underlayment_rolls} rolls")
-
+ice_water_rolls = math.ceil((d["eave"] + (d["valley"] * 2)) / 66)
+st.write(f"Ice & Water: {ice_water_rolls} rolls")
 st.subheader("4. Customer")
 customer = st.text_input("Customer name", placeholder="John Smith")
 email = st.text_input("Customer email (optional)", placeholder="customer@example.com")
