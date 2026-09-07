@@ -257,7 +257,12 @@ th,td{{padding:10px;border-bottom:1px solid #ddd;text-align:left}} td:last-child
 <b>EagleView report:</b> {escape(d["report"] or '—')}</p>
 <table style="display:none"><tr><th>Item</th><th>Quantity</th><th>Amount</th></tr>
 {''.join(f'<tr><td>{escape(a)}</td><td>{escape(b)}</td><td>${c:,.2f}</td></tr>' for a,b,c in lines)}
-</table><div class='total'>Total: ${grand_total:,.2f}</div>
+</table>
+<div style="text-align:right;margin-top:18px;line-height:1.6">
+  <div>Labor: ${labor_total:,.2f}</div>
+  <div>Materials: ${material_cost_total:,.2f}</div>
+  <div class="total">Grand Total: ${grand_total:,.2f}</div>
+</div>
 <h2>Scope of Work</h2><div class='scope'>{escape(scope)}</div>
 </body></html>
 """
