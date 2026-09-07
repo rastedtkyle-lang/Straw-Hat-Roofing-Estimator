@@ -120,11 +120,14 @@ st.subheader("3. Material Takeoff")
 waste = st.number_input("Shingle waste %", value=6.0)
 order_squares = d["squares"] * (1 + waste / 100)
 shingle_bundles = math.ceil(order_squares * 3)
-
+shingle_cost = shingle_bundles * 39.50
 starter_bundles = math.ceil(d["eave"] / 100)
+starter_cost = starter_bundles * 79.50
 
 ridge_cap_bundles = math.ceil((d["ridge"] + d["hip"]) / 30)
+ridge_cap_cost = ridge_cap_bundles * 87.50
 underlayment_rolls = math.ceil(d["squares"] / 10)
+underlayment_cost = underlayment_rolls * 77.50
 st.write(f"Shingles: {shingle_bundles} bundles")
 
 st.write(f"Starter: {starter_bundles} bundles")
@@ -133,16 +136,77 @@ st.write(f"Ridge cap: {ridge_cap_bundles} bundles")
 
 st.write(f"Underlayment: {underlayment_rolls} rolls")
 ice_water_rolls = math.ceil((d["eave"] + (d["valley"] * 2)) / 66)
+ice_water_cost = ice_water_rolls * 77.50
 st.write(f"Ice & Water: {ice_water_rolls} rolls")
 drip_edge_pieces = math.ceil(d["drip"] / (119 / 12))
+drip_edge_cost = drip_edge_pieces * 12.00
 st.write(f"Drip edge: {drip_edge_pieces} pieces")
 step_flashing_pieces = math.ceil((d["step"] * 12) / 5)
+step_flashing_cost = step_flashing_pieces * 0.58
 st.write(f"Step flashing: {step_flashing_pieces} pieces")
+shingle_nail_boxes = math.ceil(d["squares"] / 15)
+shingle_nail_cost = shingle_nail_boxes * 35.00
+st.write(f'1-1/4" shingle nails: {shingle_nail_boxes} boxes')
+ridge_nail_rolls = math.ceil((d["ridge"] + d["hip"]) / 15)
+ridge_nail_cost = ridge_nail_rolls * 2.50
+st.write(f'2" ridge/hip nails: {ridge_nail_rolls} rolls')
+henry_tubes = math.ceil(d["squares"] / 10)
+st.write(f"Henry Wet Patch: {henry_tubes} tubes")
+henry_cost = henry_tubes * 12.00
+
+st.markdown("### Material Cost Breakdown")
+
+st.write(f"Shingles: {shingle_bundles} bundles — ${shingle_cost:,.2f}")
+
+st.write(f"Starter: {starter_bundles} bundles — ${starter_cost:,.2f}")
+
+st.write(f"Ridge cap: {ridge_cap_bundles} bundles — ${ridge_cap_cost:,.2f}")
+
+st.write(f"Underlayment: {underlayment_rolls} rolls — ${underlayment_cost:,.2f}")
+
+st.write(f"Ice & Water: {ice_water_rolls} rolls — ${ice_water_cost:,.2f}")
+
+st.write(f"Drip edge: {drip_edge_pieces} pieces — ${drip_edge_cost:,.2f}")
+
+st.write(f"Step flashing: {step_flashing_pieces} pieces — ${step_flashing_cost:,.2f}")
+
+st.write(f'1-1/4" shingle nails: {shingle_nail_boxes} boxes — ${shingle_nail_cost:,.2f}')
+
+st.write(f'2" ridge/hip nails: {ridge_nail_rolls} rolls — ${ridge_nail_cost:,.2f}')
+
+st.write(f"Henry Wet Patch: {henry_tubes} tubes — ${henry_cost:,.2f}")
+material_total = (
+    shingle_cost
+    + starter_cost
+    + ridge_cap_cost
+    + underlayment_cost
+    + ice_water_cost
+    + drip_edge_cost
+    + step_flashing_cost
+    + shingle_nail_cost
+    + ridge_nail_cost
+    + henry_cost
+)
+
+st.markdown(f"### Material Total: ${material_total:,.2f}")
 st.subheader("4. Customer")
 customer = st.text_input("Customer name", placeholder="John Smith")
 email = st.text_input("Customer email (optional)", placeholder="customer@example.com")
 shingle = st.selectbox("Roofing system", ["Architectural Shingle", "Designer Shingle", "3-Tab Shingle"])
 
+p = st.session_state.prices
+
+material_cost_total = (
+
+    shingle_cost + starter_cost + ridge_cap_cost + underlayment_cost +
+
+    ice_water_cost + drip_edge_cost + step_flashing_cost +
+
+    shingle_nail_cost + ridge_nail_cost + henry_cost
+
+)
+
+st.write(f"Estimated material cost: ${material_cost_total:,.2f}")
 p = st.session_state.prices
 lines = [
     ("Roofing system", f'{d["squares"]:.2f} squares', d["squares"] * p["roof"]),
@@ -156,6 +220,11 @@ lines = [
 ]
 lines = [x for x in lines if x[2] > 0]
 total = sum(x[2] for x in lines)
+labor_total = total
+grand_total = labor_total + material_cost_total
+st.write(f"Labor: ${labor_total:,.2f}")
+st.write(f"Materials: ${material_cost_total:,.2f}")
+st.markdown(f"### Total Price: ${grand_total:,.2f}")
 
 scope = st.text_area("Scope of work", """Remove existing roofing as necessary.
 Install ice & water protection in required areas.
@@ -167,8 +236,7 @@ Install ridge/hip cap.
 Replace listed flashing.
 Clean up roofing debris and magnet sweep the work area.""", height=160)
 
-st.subheader("4. Customer estimate")
-show_itemized = st.checkbox("Show itemized pricing on customer proposal", value=True)
+st.subheader("5. Customer estimate")
 proposal_html = f"""
 <!doctype html><html><head><meta name='viewport' content='width=device-width,initial-scale=1'>
 <title>Roof Replacement Proposal</title>
@@ -187,16 +255,16 @@ th,td{{padding:10px;border-bottom:1px solid #ddd;text-align:left}} td:last-child
 <b>Roofing system:</b> {escape(shingle)}<br>
 <b>Predominant pitch:</b> {escape(d["pitch"] or '—')}<br>
 <b>EagleView report:</b> {escape(d["report"] or '—')}</p>
-<table {'style="display:none"' if not show_itemized else ''}><tr><th>Item</th><th>Quantity</th><th>Amount</th></tr>
+<table style="display:none"><tr><th>Item</th><th>Quantity</th><th>Amount</th></tr>
 {''.join(f'<tr><td>{escape(a)}</td><td>{escape(b)}</td><td>${c:,.2f}</td></tr>' for a,b,c in lines)}
-</table><div class='total'>Total: ${total:,.2f}</div>
+</table><div class='total'>Total: ${grand_total:,.2f}</div>
 <h2>Scope of Work</h2><div class='scope'>{escape(scope)}</div>
 </body></html>
 """
 
 st.markdown(f"**Customer:** {customer or 'Customer'}  \n**Property:** {d['address'] or 'Address'}")
 st.dataframe([{"Item": a, "Quantity": b, "Amount": f"${c:,.2f}"} for a,b,c in lines], use_container_width=True, hide_index=True)
-st.markdown(f"## Total: ${total:,.2f}")
+st.markdown(f"## Total: ${grand_total:,.2f}")
 
 st.download_button(
     "📄 Download estimate (HTML)",
