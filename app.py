@@ -120,7 +120,7 @@ starter_cost = starter_bundles * 79.50
 
 ridge_cap_bundles = math.ceil((d["ridge"] + d["hip"]) / 30)
 ridge_cap_cost = ridge_cap_bundles * 87.50
-underlayment_rolls = math.ceil(d["squares"] / 10)
+underlayment_rolls = math.ceil(max(0.0, d["squares"] * 100 - d["eave"] * 6) / 1000)
 underlayment_cost = underlayment_rolls * 77.50
 st.write(f"Shingles: {shingle_bundles} bundles")
 
