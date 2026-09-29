@@ -21,7 +21,7 @@ st.title("🏠 Straw Hat Roofing")
 st.caption("EagleView PDF → measurements → your pricing → customer estimate")
 
 DEFAULT_PRICES = {
-    "roof": 325.0,
+    "roof": 300.0,
     "ridge": 4.0,
     "hip": 4.0,
     "valley": 5.0,
