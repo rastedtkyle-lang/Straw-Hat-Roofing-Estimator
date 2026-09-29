@@ -274,7 +274,7 @@ th,td{{padding:10px;border-bottom:1px solid #ddd;text-align:left}} td:last-child
 """
 
 st.markdown(f"**Customer:** {customer or 'Customer'}  \n**Property:** {customer_address or 'Address'}")
-st.dataframe([{"Item": a, "Quantity": b, "Amount": f"${c:,.2f}"} for a,b,c in lines], use_container_width=True, hide_index=True)
+st.dataframe([{"Item": a, "Quantity": b, "Amount": f"${c:,.2f}"} for a,b,c in lines], column_order=["Item", "Quantity", "Amount"], use_container_width=True, hide_index=True)
 st.markdown(f"## Total: ${grand_total:,.2f}")
 
 st.download_button(
