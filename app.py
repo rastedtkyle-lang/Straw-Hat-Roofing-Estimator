@@ -96,6 +96,10 @@ except Exception as e:
     st.error(f"I couldn't read this PDF: {e}")
     st.stop()
 
+if not 0 < d["sqft"] < float("inf"):
+    st.error("This report could not be read: no valid roof area was extracted. Please upload a readable EagleView report.")
+    st.stop()
+
 st.subheader("1. EagleView")
 c1, c2, c3, c4 = st.columns(4)
 c1.metric("Roof area", f'{d["sqft"]:,.0f} sq ft')
