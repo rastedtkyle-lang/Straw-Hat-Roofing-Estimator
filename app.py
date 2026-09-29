@@ -24,17 +24,19 @@ DEFAULT_PRICES = {
     "roof": 300.0,
     "drip": 2.0,
     "other": 0.0,
+    "sheathing": 40.0,
 }
 
 if "prices" not in st.session_state:
     st.session_state.prices = DEFAULT_PRICES.copy()
 
-with st.expander("⚙️ Labor pricing", expanded=True):
+with st.expander("⚙️ Labor and material pricing", expanded=True):
     p = st.session_state.prices
     c1, c2 = st.columns(2)
     p["roof"] = c1.number_input("Roofing labor / square", min_value=0.0, value=p["roof"], step=5.0)
     p["drip"] = c1.number_input("Drip edge labor / LF", min_value=0.0, value=p["drip"], step=0.5)
     p["other"] = c2.number_input("Other / job", min_value=0.0, value=p["other"], step=25.0)
+    p["sheathing"] = c2.number_input("4'x8' sheathing / sheet", min_value=0.0, value=p.get("sheathing", DEFAULT_PRICES["sheathing"]), step=1.0)
     st.caption("The roofing labor rate includes ridge cap, hip cap, valleys, regular flashing, and step flashing labor. Drip edge labor is charged separately. Material costs are added separately.")
 
 uploaded = st.file_uploader("📄 Upload EagleView Premium Report", type=["pdf"], help="Upload the EagleView PDF from your phone.")
@@ -112,6 +114,8 @@ import math
 st.subheader("3. Material Takeoff and Cost")
 
 waste = st.number_input("Shingle waste %", min_value=0.0, value=6.0)
+sheathing_sheets = st.number_input("4'x8' sheathing sheets", min_value=0, value=0, step=1)
+sheathing_cost = sheathing_sheets * p["sheathing"]
 order_squares = d["squares"] * (1 + waste / 100)
 shingle_bundles = math.ceil(order_squares * 3)
 shingle_cost = shingle_bundles * 39.50
@@ -167,6 +171,7 @@ st.write(f'2" ridge/hip nails: {ridge_nail_rolls} rolls — ${ridge_nail_cost:,.
 st.write(f"Henry Wet Patch: {henry_tubes} tubes — ${henry_cost:,.2f}")
 st.write(f"{valley_material}: {valley_material_quantity} {valley_material_unit} — ${valley_material_cost:,.2f}")
 st.write(f"Delivery: ${delivery_cost:,.2f}")
+st.write(f"4'x8' sheathing: {sheathing_sheets} sheets — ${sheathing_cost:,.2f}")
 material_total = (
     shingle_cost
     + starter_cost
@@ -180,6 +185,7 @@ material_total = (
     + henry_cost
     + valley_material_cost
     + delivery_cost
+    + sheathing_cost
 )
 
 st.markdown(f"### Material Total: ${material_total:,.2f}")
@@ -198,7 +204,7 @@ material_cost_total = (
     ice_water_cost + drip_edge_cost + step_flashing_cost +
 
     shingle_nail_cost + ridge_nail_cost + henry_cost +
-    valley_material_cost + delivery_cost
+    valley_material_cost + delivery_cost + sheathing_cost
 
 )
 
