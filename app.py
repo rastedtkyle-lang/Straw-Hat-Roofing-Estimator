@@ -22,12 +22,7 @@ st.caption("EagleView PDF → measurements → your pricing → customer estimat
 
 DEFAULT_PRICES = {
     "roof": 300.0,
-    "ridge": 4.0,
-    "hip": 4.0,
-    "valley": 5.0,
     "drip": 2.0,
-    "flash": 5.0,
-    "step": 5.0,
     "other": 0.0,
 }
 
@@ -38,12 +33,7 @@ with st.expander("⚙️ Pricing", expanded=False):
     p = st.session_state.prices
     c1, c2 = st.columns(2)
     p["roof"] = c1.number_input("Roofing system / square", min_value=0.0, value=p["roof"], step=5.0)
-    p["ridge"] = c2.number_input("Ridge cap / LF", min_value=0.0, value=p["ridge"], step=0.5)
-    p["hip"] = c1.number_input("Hip cap / LF", min_value=0.0, value=p["hip"], step=0.5)
-    p["valley"] = c2.number_input("Valley / LF", min_value=0.0, value=p["valley"], step=0.5)
     p["drip"] = c1.number_input("Drip edge / LF", min_value=0.0, value=p["drip"], step=0.5)
-    p["flash"] = c2.number_input("Flashing / LF", min_value=0.0, value=p["flash"], step=0.5)
-    p["step"] = c1.number_input("Step flashing / LF", min_value=0.0, value=p["step"], step=0.5)
     p["other"] = c2.number_input("Other / job", min_value=0.0, value=p["other"], step=25.0)
     st.caption("These are temporary prototype prices. We will replace them with your real Straw Hat pricing rules.")
 
@@ -231,12 +221,7 @@ st.write(f"Estimated material cost: ${material_cost_total:,.2f}")
 p = st.session_state.prices
 lines = [
     ("Roofing system", f'{d["squares"]:.2f} squares', d["squares"] * p["roof"]),
-    ("Ridge cap", f'{d["ridge"]:.0f} LF', d["ridge"] * p["ridge"]),
-    ("Hip cap", f'{d["hip"]:.0f} LF', d["hip"] * p["hip"]),
-    ("Valley", f'{d["valley"]:.0f} LF', d["valley"] * p["valley"]),
     ("Drip edge", f'{d["drip"]:.0f} LF', d["drip"] * p["drip"]),
-    ("Flashing", f'{d["flashing"]:.0f} LF', d["flashing"] * p["flash"]),
-    ("Step flashing", f'{d["step"]:.0f} LF', d["step"] * p["step"]),
     ("Other", "1 job", p["other"]),
 ]
 lines = [x for x in lines if x[2] > 0]
