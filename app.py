@@ -210,6 +210,7 @@ material_total = (
 st.markdown(f"### Material Total: ${material_total:,.2f}")
 st.subheader("4. Customer")
 customer = st.text_input("Customer name", placeholder="John Smith")
+customer_address = st.text_input("Property address", value=d["address"])
 email = st.text_input("Customer email (optional)", placeholder="customer@example.com")
 shingle = st.selectbox("Roofing system", ["Architectural Shingle", "Designer Shingle", "3-Tab Shingle"])
 
@@ -271,7 +272,7 @@ th,td{{padding:10px;border-bottom:1px solid #ddd;text-align:left}} td:last-child
 <div class='no-print'><button class='btn' onclick='window.print()'>Print / Save as PDF</button><hr></div>
 <h1>Straw Hat Roofing and Construction</h1><div class='muted'>Roof Replacement Proposal</div>
 <p><b>Customer:</b> {escape(customer or 'Customer')}<br>
-<b>Property:</b> {escape(d["address"] or 'Address')}<br>
+<b>Property:</b> {escape(customer_address or 'Address')}<br>
 <b>Roofing system:</b> {escape(shingle)}<br>
 <b>Predominant pitch:</b> {escape(d["pitch"] or '—')}<br>
 <b>EagleView report:</b> {escape(d["report"] or '—')}</p>
@@ -287,7 +288,7 @@ th,td{{padding:10px;border-bottom:1px solid #ddd;text-align:left}} td:last-child
 </body></html>
 """
 
-st.markdown(f"**Customer:** {customer or 'Customer'}  \n**Property:** {d['address'] or 'Address'}")
+st.markdown(f"**Customer:** {customer or 'Customer'}  \n**Property:** {customer_address or 'Address'}")
 st.dataframe([{"Item": a, "Quantity": b, "Amount": f"${c:,.2f}"} for a,b,c in lines], use_container_width=True, hide_index=True)
 st.markdown(f"## Total: ${grand_total:,.2f}")
 
