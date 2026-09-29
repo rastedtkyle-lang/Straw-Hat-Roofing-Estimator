@@ -154,6 +154,17 @@ henry_tubes = math.ceil(d["squares"] / 10)
 st.write(f"Henry Wet Patch: {henry_tubes} tubes")
 henry_cost = henry_tubes * 12.00
 
+valley_material = st.selectbox("Valley material", ["Hidden Valley", "W-Valley"])
+if valley_material == "Hidden Valley":
+    valley_material_quantity = math.ceil(d["valley"] / 50)
+    valley_material_unit = "rolls"
+    valley_material_cost = valley_material_quantity * 74.50
+else:
+    valley_material_quantity = math.ceil(d["valley"] / 10)
+    valley_material_unit = "pieces"
+    valley_material_cost = valley_material_quantity * 30.00
+delivery_cost = 150.00
+
 st.markdown("### Material Cost Breakdown")
 
 st.write(f"Shingles: {shingle_bundles} bundles — ${shingle_cost:,.2f}")
@@ -175,6 +186,8 @@ st.write(f'1-1/4" shingle nails: {shingle_nail_boxes} boxes — ${shingle_nail_c
 st.write(f'2" ridge/hip nails: {ridge_nail_rolls} rolls — ${ridge_nail_cost:,.2f}')
 
 st.write(f"Henry Wet Patch: {henry_tubes} tubes — ${henry_cost:,.2f}")
+st.write(f"{valley_material}: {valley_material_quantity} {valley_material_unit} — ${valley_material_cost:,.2f}")
+st.write(f"Delivery: ${delivery_cost:,.2f}")
 material_total = (
     shingle_cost
     + starter_cost
@@ -186,6 +199,8 @@ material_total = (
     + shingle_nail_cost
     + ridge_nail_cost
     + henry_cost
+    + valley_material_cost
+    + delivery_cost
 )
 
 st.markdown(f"### Material Total: ${material_total:,.2f}")
@@ -202,7 +217,8 @@ material_cost_total = (
 
     ice_water_cost + drip_edge_cost + step_flashing_cost +
 
-    shingle_nail_cost + ridge_nail_cost + henry_cost
+    shingle_nail_cost + ridge_nail_cost + henry_cost +
+    valley_material_cost + delivery_cost
 
 )
 
