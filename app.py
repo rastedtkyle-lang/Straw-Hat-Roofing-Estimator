@@ -29,13 +29,13 @@ DEFAULT_PRICES = {
 if "prices" not in st.session_state:
     st.session_state.prices = DEFAULT_PRICES.copy()
 
-with st.expander("⚙️ Pricing", expanded=False):
+with st.expander("⚙️ Labor pricing", expanded=True):
     p = st.session_state.prices
     c1, c2 = st.columns(2)
-    p["roof"] = c1.number_input("Roofing system / square", min_value=0.0, value=p["roof"], step=5.0)
-    p["drip"] = c1.number_input("Drip edge / LF", min_value=0.0, value=p["drip"], step=0.5)
+    p["roof"] = c1.number_input("Roofing labor / square", min_value=0.0, value=p["roof"], step=5.0)
+    p["drip"] = c1.number_input("Drip edge labor / LF", min_value=0.0, value=p["drip"], step=0.5)
     p["other"] = c2.number_input("Other / job", min_value=0.0, value=p["other"], step=25.0)
-    st.caption("These are temporary prototype prices. We will replace them with your real Straw Hat pricing rules.")
+    st.caption("The roofing labor rate includes ridge cap, hip cap, valleys, regular flashing, and step flashing labor. Drip edge labor is charged separately. Material costs are added separately.")
 
 uploaded = st.file_uploader("📄 Upload EagleView Premium Report", type=["pdf"], help="Upload the EagleView PDF from your phone.")
 
@@ -220,8 +220,8 @@ material_cost_total = (
 st.write(f"Estimated material cost: ${material_cost_total:,.2f}")
 p = st.session_state.prices
 lines = [
-    ("Roofing system", f'{d["squares"]:.2f} squares', d["squares"] * p["roof"]),
-    ("Drip edge", f'{d["drip"]:.0f} LF', d["drip"] * p["drip"]),
+    ("Roofing labor", f'{d["squares"]:.2f} squares', d["squares"] * p["roof"]),
+    ("Drip edge labor", f'{d["drip"]:.0f} LF', d["drip"] * p["drip"]),
     ("Other", "1 job", p["other"]),
 ]
 lines = [x for x in lines if x[2] > 0]
