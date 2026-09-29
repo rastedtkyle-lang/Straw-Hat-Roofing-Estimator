@@ -121,7 +121,7 @@ import math
 
 st.subheader("3. Material Takeoff")
 
-waste = st.number_input("Shingle waste %", value=6.0)
+waste = st.number_input("Shingle waste %", min_value=0.0, value=6.0)
 order_squares = d["squares"] * (1 + waste / 100)
 shingle_bundles = math.ceil(order_squares * 3)
 shingle_cost = shingle_bundles * 39.50
