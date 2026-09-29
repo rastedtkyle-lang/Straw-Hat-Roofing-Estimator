@@ -77,7 +77,7 @@ def extract_eagleview(text):
         "rake": num(r"Rakes[†]?\s*=\s*([\d,]+)\s*ft", text),
         "eave": num(r"Eaves/Starter[‡]?\s*=\s*([\d,]+)\s*ft", text),
         "drip": num(r"Drip Edge \(Eaves \+ Rakes\)\s*=\s*([\d,]+)\s*ft", text),
-        "flashing": num(r"Flashing\s*=\s*([\d,]+)\s*ft", text),
+        "flashing": num(r"\bFlashing\s*=\s*([\d,]+)\s*ft", re.sub(r"\bStep\s+flashing\b", "", text, flags=re.I)),
         "step": num(r"Step flashing\s*=\s*([\d,]+)\s*ft", text),
         "pitch": m_pitch.group(1) if m_pitch else "",
         "penetrations": num(r"Total Penetrations\s*=\s*([\d,]+)", text),
