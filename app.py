@@ -1,7 +1,10 @@
 import re
+import math
+import hashlib
 from html import escape
 import streamlit as st
 from pypdf import PdfReader
+from supabase import create_client
 
 st.set_page_config(page_title="Straw Hat Roofing Estimator", page_icon="🏠", layout="centered")
 
@@ -24,7 +27,6 @@ DEFAULT_PRICES = {
     "roof": 300.0,
     "drip": 2.0,
     "other": 0.0,
-    "sheathing": 40.0,
     "sheathing_labor": 0.0,
     "ventilation_labor": 0.0,
     "chimney_demolition_labor": 0.0,
@@ -45,22 +47,77 @@ with st.expander("Labor Pricing", expanded=True):
     p["other"] = st.number_input("Other / job", min_value=0.0, value=p["other"], step=25.0)
     st.caption("The roofing labor rate includes ridge cap, hip cap, valleys, regular flashing, and step flashing labor. Drip edge labor is charged separately. Material costs are added separately.")
 
+# Column names match the existing public.material_presets table.
+MATERIAL_FIELDS = [
+    ("shingles_price", "Shingles", "bundle"),
+    ("starter_price", "Starter", "bundle"),
+    ("ridge_cap_price", "Ridge cap", "bundle"),
+    ("underlayment_price", "Underlayment", "roll"),
+    ("ice_water_price", "Ice & Water", "roll"),
+    ("drip_edge_price", "Drip edge", "piece"),
+    ("step_flashing_price", "Step flashing", "piece"),
+    ("shingle_nails_price", '1-1/4" shingle nails', "box"),
+    ("ridge_hip_nails_price", '2" ridge/hip nails', "roll"),
+    ("wet_patch_price", "Henry Wet Patch", "tube"),
+    ("hidden_valley_price", "Hidden Valley", "roll"),
+    ("w_valley_price", "W-Valley", "piece"),
+    ("delivery_price", "Delivery", "job"),
+    ("sheathing_price", "4'x8' sheathing", "sheet"),
+    ("cap_staples_price", "Cap staples", "unit"),
+    ("staples_price", "Regular staples", "unit"),
+]
+
+
+@st.cache_data(ttl=60, show_spinner=False)
+def load_material_presets():
+    # Credentials stay on the server; never display connection exceptions.
+    client = create_client(
+        st.secrets["SUPABASE_URL"],
+        st.secrets["SUPABASE_PUBLISHABLE_KEY"],
+    )
+    return client.table("material_presets").select("*").execute().data
+
+
 with st.expander("Material Pricing", expanded=False):
-    st.caption("Fixed material prices are shown for reference. The sheathing price remains editable.")
-    st.write("Shingles: $39.50 / bundle")
-    st.write("Starter: $79.50 / bundle")
-    st.write("Ridge cap: $87.50 / bundle")
-    st.write("Underlayment: $77.50 / roll")
-    st.write("Ice & Water: $77.50 / roll")
-    st.write("Drip edge: $12.00 / piece")
-    st.write("Step flashing: $0.58 / piece")
-    st.write('1-1/4" shingle nails: $35.00 / box')
-    st.write('2" ridge/hip nails: $2.50 / roll')
-    st.write("Henry Wet Patch: $12.00 / tube")
-    st.write("Hidden Valley: $74.50 / roll")
-    st.write("W-Valley: $30.00 / piece")
-    st.write("Delivery: $150.00 / job")
-    p["sheathing"] = st.number_input("4'x8' sheathing / sheet", min_value=0.0, value=p.get("sheathing", DEFAULT_PRICES["sheathing"]), step=1.0)
+    try:
+        material_presets = load_material_presets()
+    except Exception:
+        st.error("Unable to load material pricing. Check the SUPABASE_URL and "
+                 "SUPABASE_PUBLISHABLE_KEY Streamlit secrets and read access to material_presets.")
+        st.stop()
+    if not material_presets:
+        st.error("No material presets are available. Check the table's rows and read permissions.")
+        st.stop()
+    preset_index = st.selectbox(
+        "Material preset", range(len(material_presets)),
+        format_func=lambda i: str(material_presets[i].get("name")
+                                  or material_presets[i].get("preset_name")
+                                  or f"Preset {i + 1}"),
+    )
+    preset = material_presets[preset_index]
+    material_prices = {}
+    invalid_columns = []
+    for column, label, unit in MATERIAL_FIELDS:
+        try:
+            price = float(preset[column])
+            if not math.isfinite(price) or price < 0:
+                raise ValueError
+            material_prices[column] = price
+        except (KeyError, TypeError, ValueError, OverflowError):
+            invalid_columns.append(column)
+    if invalid_columns:
+        st.error("The selected preset needs valid nonnegative prices for: "
+                 + ", ".join(invalid_columns))
+        st.stop()
+    st.caption("Prices come from Supabase. The sheathing price remains editable for this estimate.")
+    for column, label, unit in MATERIAL_FIELDS:
+        if column != "sheathing_price":
+            st.write(f"{label}: ${material_prices[column]:,.2f} / {unit}")
+    p["sheathing"] = st.number_input(
+        "4'x8' sheathing / sheet", min_value=0.0,
+        value=material_prices["sheathing_price"], step=1.0,
+        key=f"sheathing_price_{preset_index}_{material_prices['sheathing_price']}",
+    )
 
 uploaded = st.file_uploader("📄 Upload EagleView Premium Report", type=["pdf"], help="Upload the EagleView PDF from your phone.")
 
@@ -132,46 +189,57 @@ fields = [
 ]
 for key, label in fields:
     d[key] = st.number_input(label, min_value=0.0, value=float(d[key]), step=1.0, key=f"m_{key}")
-import math
 
 st.subheader("3. Material Takeoff and Cost")
 
+job_key = hashlib.sha256(uploaded.getvalue()).hexdigest()
+
 waste = st.number_input("Shingle waste %", min_value=0.0, value=6.0)
 sheathing_sheets = st.number_input("4'x8' sheathing sheets", min_value=0, value=0, step=1)
+cap_staples_quantity = st.number_input("Cap staples — quantity", min_value=0, value=0, step=1, key=f"cap_staples_{job_key}")
+staples_quantity = st.number_input("Regular staples — quantity", min_value=0, value=0, step=1, key=f"staples_{job_key}")
+cap_staples_cost = cap_staples_quantity * material_prices["cap_staples_price"]
+staples_cost = staples_quantity * material_prices["staples_price"]
+# This is a job allowance, independent of misc_roof_penetrations_price (NULL).
+misc_roof_penetrations_cost = st.number_input(
+    "Misc. Roof Penetration Allowance ($)", min_value=0.0, value=0.0, step=1.0,
+    help="Enter the total allowance for this job. No preset price is used.",
+    key=f"penetration_allowance_{job_key}",
+)
 sheathing_cost = sheathing_sheets * p["sheathing"]
 order_squares = d["squares"] * (1 + waste / 100)
 shingle_bundles = math.ceil(order_squares * 3)
-shingle_cost = shingle_bundles * 39.50
+shingle_cost = shingle_bundles * material_prices["shingles_price"]
 starter_bundles = math.ceil(d["eave"] / 100)
-starter_cost = starter_bundles * 79.50
+starter_cost = starter_bundles * material_prices["starter_price"]
 
 ridge_cap_bundles = math.ceil((d["ridge"] + d["hip"]) / 30)
-ridge_cap_cost = ridge_cap_bundles * 87.50
+ridge_cap_cost = ridge_cap_bundles * material_prices["ridge_cap_price"]
 underlayment_rolls = math.ceil(max(0.0, d["squares"] * 100 - d["eave"] * 6) / 1000)
-underlayment_cost = underlayment_rolls * 77.50
+underlayment_cost = underlayment_rolls * material_prices["underlayment_price"]
 ice_water_rolls = math.ceil((d["eave"] + (d["valley"] * 2)) / 66)
-ice_water_cost = ice_water_rolls * 77.50
+ice_water_cost = ice_water_rolls * material_prices["ice_water_price"]
 drip_edge_pieces = math.ceil(d["drip"] / (119 / 12))
-drip_edge_cost = drip_edge_pieces * 12.00
+drip_edge_cost = drip_edge_pieces * material_prices["drip_edge_price"]
 step_flashing_pieces = math.ceil((d["step"] * 12) / 5)
-step_flashing_cost = step_flashing_pieces * 0.58
+step_flashing_cost = step_flashing_pieces * material_prices["step_flashing_price"]
 shingle_nail_boxes = math.ceil(d["squares"] / 15)
-shingle_nail_cost = shingle_nail_boxes * 35.00
+shingle_nail_cost = shingle_nail_boxes * material_prices["shingle_nails_price"]
 ridge_nail_rolls = math.ceil((d["ridge"] + d["hip"]) / 15)
-ridge_nail_cost = ridge_nail_rolls * 2.50
+ridge_nail_cost = ridge_nail_rolls * material_prices["ridge_hip_nails_price"]
 henry_tubes = math.ceil(d["squares"] / 10)
-henry_cost = henry_tubes * 12.00
+henry_cost = henry_tubes * material_prices["wet_patch_price"]
 
 valley_material = st.selectbox("Valley material", ["Hidden Valley", "W-Valley"])
 if valley_material == "Hidden Valley":
     valley_material_quantity = math.ceil(d["valley"] / 50)
     valley_material_unit = "rolls"
-    valley_material_cost = valley_material_quantity * 74.50
+    valley_material_cost = valley_material_quantity * material_prices["hidden_valley_price"]
 else:
     valley_material_quantity = math.ceil(d["valley"] / 10)
     valley_material_unit = "pieces"
-    valley_material_cost = valley_material_quantity * 30.00
-delivery_cost = 150.00
+    valley_material_cost = valley_material_quantity * material_prices["w_valley_price"]
+delivery_cost = material_prices["delivery_price"]
 
 st.write(f"Shingles: {shingle_bundles} bundles — ${shingle_cost:,.2f}")
 
@@ -195,6 +263,9 @@ st.write(f"Henry Wet Patch: {henry_tubes} tubes — ${henry_cost:,.2f}")
 st.write(f"{valley_material}: {valley_material_quantity} {valley_material_unit} — ${valley_material_cost:,.2f}")
 st.write(f"Delivery: ${delivery_cost:,.2f}")
 st.write(f"4'x8' sheathing: {sheathing_sheets} sheets — ${sheathing_cost:,.2f}")
+st.write(f"Cap staples: {cap_staples_quantity} units — ${cap_staples_cost:,.2f}")
+st.write(f"Regular staples: {staples_quantity} units — ${staples_cost:,.2f}")
+st.write(f"Misc. Roof Penetration Allowance: ${misc_roof_penetrations_cost:,.2f}")
 material_total = (
     shingle_cost
     + starter_cost
@@ -209,6 +280,9 @@ material_total = (
     + valley_material_cost
     + delivery_cost
     + sheathing_cost
+    + misc_roof_penetrations_cost
+    + cap_staples_cost
+    + staples_cost
 )
 
 st.markdown(f"### Material Total: ${material_total:,.2f}")
@@ -227,16 +301,7 @@ shingle = st.selectbox("Roofing system", ["Architectural Shingle", "Designer Shi
 
 p = st.session_state.prices
 
-material_cost_total = (
-
-    shingle_cost + starter_cost + ridge_cap_cost + underlayment_cost +
-
-    ice_water_cost + drip_edge_cost + step_flashing_cost +
-
-    shingle_nail_cost + ridge_nail_cost + henry_cost +
-    valley_material_cost + delivery_cost + sheathing_cost
-
-)
+material_cost_total = material_total
 
 st.write(f"Estimated material cost: ${material_cost_total:,.2f}")
 p = st.session_state.prices

@@ -20,6 +20,10 @@ The easiest route is Streamlit Community Cloud:
 6. Streamlit gives the app a streamlit.app URL that opens in Safari.
 
 IMPORTANT
-- The sample prices in the app are placeholders and must be replaced with your actual pricing before customer use.
+- Material prices are read from the existing Supabase material_presets table.
+- Configure SUPABASE_URL and SUPABASE_PUBLISHABLE_KEY in Streamlit Secrets (no section heading). Never put secret values in app.py or Git.
+- The publishable key needs SELECT access to material_presets under your existing Supabase permissions/RLS policies. If pricing cannot be loaded or required prices are missing, the app stops instead of estimating with fallback prices.
+- Material pricing is cached for up to 60 seconds. Sheathing remains editable per estimate; the penetration allowance defaults to $0 and is independent of its nullable database column. The app does not write to Supabase.
+- Run offline calculation checks with: python -m unittest test_estimator
 - This MVP does not yet save jobs/customers between sessions or have user accounts.
 - It is intentionally focused on the EagleView-to-estimate workflow first.
