@@ -25,6 +25,10 @@ DEFAULT_PRICES = {
     "drip": 2.0,
     "other": 0.0,
     "sheathing": 40.0,
+    "sheathing_labor": 0.0,
+    "ventilation_labor": 0.0,
+    "chimney_demolition_labor": 0.0,
+    "chimney_flashing_labor": 0.0,
 }
 
 if "prices" not in st.session_state:
@@ -38,6 +42,11 @@ with st.expander("⚙️ Labor and material pricing", expanded=True):
     p["other"] = c2.number_input("Other / job", min_value=0.0, value=p["other"], step=25.0)
     p["sheathing"] = c2.number_input("4'x8' sheathing / sheet", min_value=0.0, value=p.get("sheathing", DEFAULT_PRICES["sheathing"]), step=1.0)
     st.caption("The roofing labor rate includes ridge cap, hip cap, valleys, regular flashing, and step flashing labor. Drip edge labor is charged separately. Material costs are added separately.")
+    st.markdown("**Optional extra labor rates**")
+    p["sheathing_labor"] = c1.number_input("4'x8' roof sheathing replacement labor / sheet", min_value=0.0, value=p.get("sheathing_labor", DEFAULT_PRICES["sheathing_labor"]), step=1.0)
+    p["ventilation_labor"] = c2.number_input("Added ventilation labor / unit", min_value=0.0, value=p.get("ventilation_labor", DEFAULT_PRICES["ventilation_labor"]), step=1.0)
+    p["chimney_demolition_labor"] = c1.number_input("Chimney demolition labor / chimney", min_value=0.0, value=p.get("chimney_demolition_labor", DEFAULT_PRICES["chimney_demolition_labor"]), step=1.0)
+    p["chimney_flashing_labor"] = c2.number_input("Chimney flashing labor / chimney", min_value=0.0, value=p.get("chimney_flashing_labor", DEFAULT_PRICES["chimney_flashing_labor"]), step=1.0)
 
 uploaded = st.file_uploader("📄 Upload EagleView Premium Report", type=["pdf"], help="Upload the EagleView PDF from your phone.")
 
@@ -189,6 +198,13 @@ material_total = (
 )
 
 st.markdown(f"### Material Total: ${material_total:,.2f}")
+with st.expander("Optional extra labor", expanded=False):
+    st.caption("Enter extra labor quantities here and set their rates in Labor and material pricing. Sheathing labor uses the sheathing sheets quantity from Material Takeoff and Cost. Other labor below is added to any existing Other / job charge.")
+    ventilation_labor_quantity = st.number_input("Added ventilation labor — quantity", min_value=0, value=0, step=1)
+    chimney_demolition_quantity = st.number_input("Chimney demolition labor — quantity", min_value=0, value=0, step=1)
+    chimney_flashing_quantity = st.number_input("Chimney flashing labor — quantity", min_value=0, value=0, step=1)
+    other_extra_labor = st.number_input("Other labor — amount ($)", min_value=0.0, value=0.0, step=1.0)
+
 st.subheader("4. Customer")
 customer = st.text_input("Customer name", placeholder="John Smith")
 customer_address = st.text_input("Property address", value=d["address"])
@@ -214,6 +230,11 @@ lines = [
     ("Roofing labor", f'{d["squares"]:.2f} squares', d["squares"] * p["roof"]),
     ("Drip edge labor", f'{d["drip"]:.0f} LF', d["drip"] * p["drip"]),
     ("Other", "1 job", p["other"]),
+    ("4'x8' roof sheathing replacement labor", f"{sheathing_sheets} sheets", sheathing_sheets * p["sheathing_labor"]),
+    ("Added ventilation labor", f"{ventilation_labor_quantity} units", ventilation_labor_quantity * p["ventilation_labor"]),
+    ("Chimney demolition labor", f"{chimney_demolition_quantity} chimneys", chimney_demolition_quantity * p["chimney_demolition_labor"]),
+    ("Chimney flashing labor", f"{chimney_flashing_quantity} chimneys", chimney_flashing_quantity * p["chimney_flashing_labor"]),
+    ("Other labor", "1 job", other_extra_labor),
 ]
 lines = [x for x in lines if x[2] > 0]
 total = sum(x[2] for x in lines)
