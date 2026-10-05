@@ -1,4 +1,5 @@
 import re
+from decimal import Decimal, ROUND_HALF_UP
 from html import escape
 import streamlit as st
 from pypdf import PdfReader
@@ -48,11 +49,32 @@ with st.expander("⚙️ Pricing", expanded=False):
     p["other"] = c2.number_input("Other / job", min_value=0.0, value=p["other"], step=25.0)
     st.caption("These are temporary prototype prices. We will replace them with your real Straw Hat pricing rules.")
 
+MATERIAL_PRICES = [
+    ("shingles_material", "Shingles / bundle", 39.50),
+    ("ridge_material", "Hip & Ridge / bundle", 87.50),
+    ("starter_material", "Starter / 100-LF bundle", 79.50),
+    ("ice_water_material", "Eave Guard / Ice & Water / 65-LF roll", 77.50),
+    ("underlayment_material", "Synthetic underlayment / 10-square roll", 77.50),
+    ("hidden_valley_material", "Hidden Valley flashing / 50 LF roll", 74.50),
+    ("w_valley_material", "W-Valley / 10-ft piece", 44.50),
+    ("shingle_nails_material", '1-1/4" shingle nails / box', 35.00),
+    ("cap_staples_material", "Cap staples / unit", 50.00),
+    ("staples_material", "Regular staples / unit", 12.00),
+    ("wet_patch_material", "Henry Wet Patch / tube", 12.00),
+    ("delivery_material", "Delivery / job", 150.00),
+]
+
 with st.expander("Material Pricing", expanded=False):
-    p["hidden_valley_material"] = st.number_input(
-        "Hidden Valley flashing / 50 LF roll", min_value=0.0,
-        value=p.get("hidden_valley_material", 74.50), step=0.50, format="%.2f",
-        key="hidden_valley_material_price",
+    for key, label, default in MATERIAL_PRICES:
+        p[key] = st.number_input(
+            label, min_value=0.0, value=p.get(key, default), step=0.50,
+            format="%.2f", key=f"{key}_price",
+        )
+    st.caption("Eave Guard / Ice & Water covers approximately 1.95 squares / 65 LF per roll.")
+    p["material_tax_rate"] = st.number_input(
+        "Material sales tax (%)", min_value=0.0, max_value=100.0,
+        value=p.get("material_tax_rate", 7.875), step=0.125, format="%.3f",
+        key="material_tax_rate",
     )
 
 uploaded = st.file_uploader("📄 Upload EagleView Premium Report", type=["pdf"], help="Upload the EagleView PDF from your phone.")
@@ -128,14 +150,14 @@ st.subheader("3. Material Takeoff")
 waste = st.number_input("Shingle waste %", value=6.0)
 order_squares = d["squares"] * (1 + waste / 100)
 shingle_bundles = math.ceil(order_squares * 3)
-shingle_cost = shingle_bundles * 39.50
+shingle_cost = shingle_bundles * p["shingles_material"]
 starter_bundles = math.ceil(d["eave"] / 100)
-starter_cost = starter_bundles * 79.50
+starter_cost = starter_bundles * p["starter_material"]
 
 ridge_cap_bundles = math.ceil((d["ridge"] + d["hip"]) / 30)
-ridge_cap_cost = ridge_cap_bundles * 87.50
+ridge_cap_cost = ridge_cap_bundles * p["ridge_material"]
 underlayment_rolls = math.ceil(d["squares"] / 10)
-underlayment_cost = underlayment_rolls * 77.50
+underlayment_cost = underlayment_rolls * p["underlayment_material"]
 st.write(f"Shingles: {shingle_bundles} bundles")
 
 st.write(f"Starter: {starter_bundles} bundles")
@@ -143,8 +165,8 @@ st.write(f"Starter: {starter_bundles} bundles")
 st.write(f"Ridge cap: {ridge_cap_bundles} bundles")
 
 st.write(f"Underlayment: {underlayment_rolls} rolls")
-ice_water_rolls = math.ceil((d["eave"] + (d["valley"] * 2)) / 66)
-ice_water_cost = ice_water_rolls * 77.50
+ice_water_rolls = math.ceil((d["eave"] + (d["valley"] * 2)) / 65)
+ice_water_cost = ice_water_rolls * p["ice_water_material"]
 st.write(f"Ice & Water: {ice_water_rolls} rolls")
 drip_edge_pieces = math.ceil(d["drip"] / (119 / 12))
 drip_edge_cost = drip_edge_pieces * 12.00
@@ -153,18 +175,28 @@ step_flashing_pieces = math.ceil((d["step"] * 12) / 5)
 step_flashing_cost = step_flashing_pieces * 0.58
 st.write(f"Step flashing: {step_flashing_pieces} pieces")
 shingle_nail_boxes = math.ceil(d["squares"] / 15)
-shingle_nail_cost = shingle_nail_boxes * 35.00
+shingle_nail_cost = shingle_nail_boxes * p["shingle_nails_material"]
 st.write(f'1-1/4" shingle nails: {shingle_nail_boxes} boxes')
 ridge_nail_rolls = math.ceil((d["ridge"] + d["hip"]) / 15)
 ridge_nail_cost = ridge_nail_rolls * 2.50
 st.write(f'2" ridge/hip nails: {ridge_nail_rolls} rolls')
 henry_tubes = math.ceil(d["squares"] / 10)
 st.write(f"Henry Wet Patch: {henry_tubes} tubes")
-henry_cost = henry_tubes * 12.00
+henry_cost = henry_tubes * p["wet_patch_material"]
 valley_type = st.selectbox("Valley material", ["Hidden Valley", "W-Valley"])
 valley_feet = d["valley"]
-valley_cost = math.ceil(valley_feet / 50) * p["hidden_valley_material"] if valley_type =="Hidden Valley" else math.ceil(valley_feet / 10) *30.00
-delivery_cost = 150.00
+if valley_type == "Hidden Valley":
+    valley_quantity = math.ceil(valley_feet / 50)
+    valley_cost = valley_quantity * p["hidden_valley_material"]
+else:
+    # The first piece covers 10 ft; subsequent pieces overlap by 6 inches.
+    valley_quantity = 0 if valley_feet <= 0 else 1 + math.ceil(max(0, valley_feet - 10) / 9.5)
+    valley_cost = valley_quantity * p["w_valley_material"]
+delivery_cost = p["delivery_material"]
+cap_staples_quantity = st.number_input("Cap staples quantity", min_value=0, value=0, step=1)
+staples_quantity = st.number_input("Regular staples quantity", min_value=0, value=0, step=1)
+cap_staples_cost = cap_staples_quantity * p["cap_staples_material"]
+staples_cost = staples_quantity * p["staples_material"]
 st.markdown("### Material Cost Breakdown")
 
 st.write(f"Shingles: {shingle_bundles} bundles — ${shingle_cost:,.2f}")
@@ -189,7 +221,9 @@ st.write(f"Henry Wet Patch: {henry_tubes} tubes — ${henry_cost:,.2f}")
 
 st.write(f"{valley_type}: {valley_feet:.0f} LF - ${valley_cost:,.2f}")
 st.write(f"Delivery: ${delivery_cost:,.2f}")
-material_total = (
+st.write(f"Cap staples: {cap_staples_quantity} units — ${cap_staples_cost:,.2f}")
+st.write(f"Regular staples: {staples_quantity} units — ${staples_cost:,.2f}")
+material_subtotal = (
     shingle_cost
     + starter_cost
     + ridge_cap_cost
@@ -202,9 +236,17 @@ material_total = (
     + henry_cost
     + valley_cost
     + delivery_cost
+    + cap_staples_cost
+    + staples_cost
 )
 
-st.markdown(f"### Material Total: ${material_total:,.2f}")
+# Round monetary totals to cents, with tax applied once to the full subtotal.
+material_subtotal = float(Decimal(str(material_subtotal)).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP))
+material_sales_tax = float((Decimal(str(material_subtotal)) * Decimal(str(p["material_tax_rate"])) / 100).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP))
+material_total = round(material_subtotal + material_sales_tax, 2)
+st.write(f"Material Subtotal: ${material_subtotal:,.2f}")
+st.write(f"Material Sales Tax ({p['material_tax_rate']:g}%): ${material_sales_tax:,.2f}")
+st.markdown(f"### Total Material Cost (including tax): ${material_total:,.2f}")
 st.subheader("4. Customer")
 customer = st.text_input("Customer name", placeholder="John Smith")
 email = st.text_input("Customer email (optional)", placeholder="customer@example.com")
@@ -212,16 +254,7 @@ shingle = st.selectbox("Roofing system", ["Architectural Shingle", "Designer Shi
 
 p = st.session_state.prices
 
-material_cost_total = (
-
-    shingle_cost + starter_cost + ridge_cap_cost + underlayment_cost +
-
-    ice_water_cost + drip_edge_cost + step_flashing_cost +
-
-    shingle_nail_cost + ridge_nail_cost + henry_cost
-    + (valley_cost if valley_type == "Hidden Valley" else 0.0)
-
-)
+material_cost_total = material_total
 
 st.write(f"Estimated material cost: ${material_cost_total:,.2f}")
 p = st.session_state.prices
@@ -277,7 +310,9 @@ th,td{{padding:10px;border-bottom:1px solid #ddd;text-align:left}} td:last-child
 </table>
 <div style="text-align:right;margin-top:18px;line-height:1.6">
   <div>Labor: ${labor_total:,.2f}</div>
-  <div>Materials: ${material_cost_total:,.2f}</div>
+  <div>Material Subtotal: ${material_subtotal:,.2f}</div>
+  <div>Material Sales Tax ({p['material_tax_rate']:g}%): ${material_sales_tax:,.2f}</div>
+  <div>Total Material Cost (including tax): ${material_cost_total:,.2f}</div>
   <div class="total">Grand Total: ${grand_total:,.2f}</div>
 </div>
 <h2>Scope of Work</h2><div class='scope'>{escape(scope)}</div>

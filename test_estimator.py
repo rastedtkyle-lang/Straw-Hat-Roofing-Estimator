@@ -9,8 +9,6 @@ import unittest
 from unittest.mock import MagicMock, patch
 
 APP = Path(__file__).resolve().parent / 'app.py'
-# The newer GitHub version retained by this reconciliation.
-REMOTE_BASE = 'f53051af8ec9f97fac9968704d440e41ed2594f0'
 REPORT = '''Premium Report 9/30/2026 123 Main St Report: TEST-1
 Total Area (All Pitches) = 2000 sq ft
 Predominant Pitch = 6/12
@@ -52,66 +50,106 @@ def run_app(inputs=None, source=None):
 
 
 class EstimatorTests(unittest.TestCase):
-    def test_hidden_valley_rounding_and_breakdown(self):
-        for feet, cost in [(0, 0), (1, 74.50), (50, 74.50), (50.01, 149),
-                           (51, 149), (100, 149), (101, 223.50)]:
+    def test_default_subtotal_tax_and_export(self):
+        result, st = run_app()
+        subtotal = (64*39.50 + 79.50 + 2*87.50 + 2*77.50 + 4*77.50
+                    + 17*12 + 48*.58 + 2*35 + 4*2.50 + 2*12 + 149 + 150)
+        self.assertAlmostEqual(result['material_subtotal'], subtotal)
+        self.assertEqual(result['material_sales_tax'], 305.73)
+        self.assertEqual(result['material_total'], 4188.07)
+        self.assertEqual(result['material_cost_total'], 4188.07)
+        self.assertEqual(result['grand_total'], result['labor_total'] + 4188.07)
+        st.write.assert_any_call('Material Subtotal: $3,882.34')
+        st.write.assert_any_call('Material Sales Tax (7.875%): $305.73')
+        for text in ['Material Subtotal: $3,882.34', 'Material Sales Tax (7.875%): $305.73',
+                     'Total Material Cost (including tax): $4,188.07']:
+            self.assertIn(text, result['proposal_html'])
+
+    def test_hidden_valley_boundaries(self):
+        for feet, count in [(0, 0), (1, 1), (50, 1), (50.01, 2), (51, 2), (100, 2), (101, 3)]:
             with self.subTest(feet=feet):
                 result, st = run_app({'Valley LF': feet})
-                self.assertEqual(result['valley_cost'], cost)
-                st.write.assert_any_call(f'Hidden Valley: {feet:.0f} LF - ${cost:,.2f}')
+                self.assertEqual(result['valley_quantity'], count)
+                self.assertEqual(result['valley_cost'], count*74.50)
+                st.write.assert_any_call(f'Hidden Valley: {feet:.0f} LF - ${count*74.50:,.2f}')
 
-    def test_hidden_valley_default_and_totals(self):
-        result, st = run_app()
-        other_materials = (64*39.50 + 79.50 + 2*87.50 + 2*77.50 + 4*77.50
-                           + 17*12 + 48*.58 + 2*35 + 4*2.50 + 2*12)
-        self.assertAlmostEqual(result['material_total'], other_materials + 149 + 150)
-        # Preserve the current version's delivery handling in the proposal.
-        self.assertAlmostEqual(result['material_cost_total'], other_materials + 149)
-        self.assertEqual(result['labor_total'], 20*325 + 40*4 + 20*4 + 51*5 + 160*2 + 10*5 + 20*5)
-        self.assertAlmostEqual(result['grand_total'], result['labor_total'] + other_materials + 149)
-        self.assertIn(f"Materials: ${result['material_cost_total']:,.2f}", result['proposal_html'])
-        self.assertIn(f"Grand Total: ${result['grand_total']:,.2f}", result['proposal_html'])
-        price_input = next(call for call in st.number_input.call_args_list
-                           if call.args[0] == 'Hidden Valley flashing / 50 LF roll')
-        self.assertEqual(price_input.kwargs['value'], 74.50)
-        self.assertEqual(price_input.kwargs['min_value'], 0.0)
-
-    def test_hidden_valley_edited_price_reaches_all_totals(self):
-        baseline, _ = run_app()
-        for price in [0.0, 80.0, 99.99]:
-            with self.subTest(price=price):
-                result, st = run_app({'Hidden Valley flashing / 50 LF roll': price})
-                self.assertEqual(result['valley_cost'], 2*price)
-                for total in ['material_total', 'material_cost_total', 'grand_total']:
-                    self.assertAlmostEqual(result[total] - baseline[total], 2*price - 149)
-                self.assertEqual(result['labor_total'], baseline['labor_total'])
-                st.write.assert_any_call(f'Hidden Valley: 51 LF - ${2*price:,.2f}')
-
-    def test_w_valley_rounding_and_price_unchanged(self):
-        for feet, cost in [(0, 0), (1, 30), (10, 30), (11, 60), (51, 180)]:
+    def test_w_valley_overlap_boundaries(self):
+        for feet, count in [(0, 0), (1, 1), (10, 1), (10.01, 2), (19.5, 2),
+                            (19.51, 3), (29, 3), (29.01, 4), (50, 6)]:
             with self.subTest(feet=feet):
-                result, st = run_app({'Valley LF': feet, 'Valley material': 'W-Valley',
-                                      'Hidden Valley flashing / 50 LF roll': 999.0})
-                self.assertEqual(result['valley_cost'], cost)
-                st.write.assert_any_call(f'W-Valley: {feet:.0f} LF - ${cost:,.2f}')
+                result, _ = run_app({'Valley LF': feet, 'Valley material': 'W-Valley',
+                                     'Hidden Valley flashing / 50 LF roll': 999})
+                self.assertEqual(result['valley_quantity'], count)
+                self.assertEqual(result['valley_cost'], count*44.50)
 
-    def test_newer_github_calculations_preserved(self):
-        source = subprocess.check_output(['git', 'show', f'{REMOTE_BASE}:app.py'], cwd=APP.parent).decode('utf-8')
+    def test_every_editable_price_and_no_duplicate_inputs(self):
+        baseline, st = run_app({'Cap staples quantity': 2, 'Regular staples quantity': 3,
+                                 'Material sales tax (%)': 0.0})
+        cases = [
+            ('Shingles / bundle', 39.50, 64, 'shingle_cost'),
+            ('Hip & Ridge / bundle', 87.50, 2, 'ridge_cap_cost'),
+            ('Starter / 100-LF bundle', 79.50, 1, 'starter_cost'),
+            ('Eave Guard / Ice & Water / 65-LF roll', 77.50, 4, 'ice_water_cost'),
+            ('Synthetic underlayment / 10-square roll', 77.50, 2, 'underlayment_cost'),
+            ('Hidden Valley flashing / 50 LF roll', 74.50, 2, 'valley_cost'),
+            ('1-1/4" shingle nails / box', 35, 2, 'shingle_nail_cost'),
+            ('Cap staples / unit', 50, 2, 'cap_staples_cost'),
+            ('Regular staples / unit', 12, 3, 'staples_cost'),
+            ('Henry Wet Patch / tube', 12, 2, 'henry_cost'),
+            ('Delivery / job', 150, 1, 'delivery_cost'),
+        ]
+        for label, default, count, variable in cases:
+            with self.subTest(label=label):
+                calls = [call for call in st.number_input.call_args_list if call.args[0] == label]
+                self.assertEqual(len(calls), 1)
+                self.assertEqual(calls[0].kwargs['value'], default)
+                result, _ = run_app({label: default+10, 'Cap staples quantity': 2,
+                                     'Regular staples quantity': 3, 'Material sales tax (%)': 0.0})
+                self.assertEqual(result[variable], count*(default+10))
+                self.assertAlmostEqual(result['material_total']-baseline['material_total'], count*10)
+                self.assertAlmostEqual(result['grand_total']-baseline['grand_total'], count*10)
+        result, _ = run_app({'Valley material': 'W-Valley', 'W-Valley / 10-ft piece': 60})
+        self.assertEqual(result['valley_cost'], 360)
+        self.assertEqual(baseline['cap_staples_cost'], 100)
+        self.assertEqual(baseline['staples_cost'], 36)
+
+    def test_coverage_and_existing_quantity_rules(self):
+        for feet, rolls in [(0, 0), (65, 1), (65.01, 2), (130, 2), (130.01, 3)]:
+            result, _ = run_app({'Eave/Starter LF': feet, 'Valley LF': 0})
+            self.assertEqual(result['ice_water_rolls'], rolls)
+        result, _ = run_app({'Eave/Starter LF': 0, 'Valley LF': 32.5})
+        self.assertEqual(result['ice_water_rolls'], 1)
+        for squares, nails, henry, synthetic in [(0, 0, 0, 0), (10, 1, 1, 1),
+                                                (15, 1, 2, 2), (15.01, 2, 2, 2), (30, 2, 3, 3)]:
+            result, _ = run_app({'Squares': squares})
+            self.assertEqual(result['shingle_nail_boxes'], nails)
+            self.assertEqual(result['henry_tubes'], henry)
+            self.assertEqual(result['underlayment_rolls'], synthetic)
+
+    def test_tax_overrides_and_zero_prices(self):
         for valley in ['Hidden Valley', 'W-Valley']:
-            with self.subTest(valley=valley):
-                inputs = {'Valley material': valley}
-                previous, _ = run_app(inputs, source=source)
-                current, _ = run_app(inputs)
-                # Compare every numeric calculation from GitHub, allowing only
-                # the requested Hidden Valley addition to customer totals.
-                for name, value in previous.items():
-                    if isinstance(value, (int, float)):
-                        delta = 149 if valley == 'Hidden Valley' and name in ['material_cost_total', 'grand_total'] else 0
-                        self.assertAlmostEqual(current[name], value + delta, msg=name)
-                self.assertEqual(current['lines'], previous['lines'])
-                self.assertEqual(current['d'], previous['d'])
-                if valley == 'W-Valley':
-                    self.assertEqual(current['proposal_html'], previous['proposal_html'])
+            for rate in [0.0, 5.0, 7.875]:
+                result, _ = run_app({'Valley material': valley, 'Material sales tax (%)': rate})
+                expected_tax = round(result['material_subtotal']*rate/100, 2)
+                self.assertEqual(result['material_sales_tax'], expected_tax)
+                self.assertEqual(result['material_cost_total'], round(result['material_subtotal']+expected_tax, 2))
+                self.assertEqual(result['grand_total'], result['labor_total']+result['material_cost_total'])
+        baseline, _ = run_app()
+        inputs = {label: 0.0 for _, label, _ in baseline['MATERIAL_PRICES']}
+        inputs.update({label: 0.0 for _, label in baseline['fields']})
+        result, _ = run_app(inputs)
+        self.assertEqual(result['material_subtotal'], 0)
+        self.assertEqual(result['material_sales_tax'], 0)
+        self.assertEqual(result['material_total'], 0)
+
+    def test_labor_and_unrelated_features_preserved(self):
+        source = subprocess.check_output(['git', 'show', '81a40f7:app.py'], cwd=APP.parent).decode('utf-8')
+        previous, _ = run_app(source=source)
+        current, _ = run_app()
+        for key in ['lines', 'labor_total', 'd', 'scope', 'shingle_bundles', 'starter_bundles',
+                    'ridge_cap_bundles', 'underlayment_rolls', 'drip_edge_cost', 'step_flashing_cost',
+                    'ridge_nail_cost', 'henry_tubes', 'shingle_nail_boxes']:
+            self.assertEqual(current[key], previous[key], key)
 
 
 if __name__ == '__main__':
