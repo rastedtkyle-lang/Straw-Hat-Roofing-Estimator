@@ -95,11 +95,34 @@ class EstimatorTests(unittest.TestCase):
             result, _, _ = run_app({'Valley LF': 0, 'Valley material': valley})
             self.assertEqual(result['valley_material_cost'], 0)
 
+    def test_hidden_valley_rounding_and_breakdown(self):
+        for feet, rolls in [(0, 0), (1, 1), (50, 1), (50.01, 2), (51, 2), (100, 2), (101, 3)]:
+            with self.subTest(feet=feet):
+                result, st, _ = run_app({'Valley LF': feet})
+                self.assertEqual(result['valley_material_quantity'], rolls)
+                self.assertEqual(result['valley_material_cost'], rolls * 74.50)
+                st.write.assert_any_call(f'Hidden Valley: {rolls} rolls — ${rolls * 74.50:,.2f}')
+
+    def test_hidden_valley_editable_price_and_default(self):
+        baseline, _, _ = run_app()
+        result, st, _ = run_app({'Hidden Valley flashing / 50 LF roll': 80.0})
+        self.assertEqual(result['valley_material_cost'], 160.0)
+        self.assertAlmostEqual(result['material_total'] - baseline['material_total'], 11.0)
+        self.assertAlmostEqual(result['grand_total'] - baseline['grand_total'], 11.0)
+        st.write.assert_any_call('Hidden Valley: 2 rolls — $160.00')
+        for price in [None, 999]:
+            result, _, _ = run_app(rows=[dict(PRICES, hidden_valley_price=price)])
+            self.assertEqual(result['valley_material_cost'], 149.0)
+        result, _, _ = run_app({'Valley material': 'W-Valley',
+                                'Hidden Valley flashing / 50 LF roll': 80.0})
+        self.assertEqual(result['valley_material_quantity'], 6)
+        self.assertEqual(result['valley_material_cost'], 6 * 45.50)
+
     def test_selected_preset_and_sheathing_override(self):
         second = {key: value*2 if value is not None else None for key, value in PRICES.items()}
         baseline, _, _ = run_app()
         result, _, _ = run_app({'Material preset': 1}, rows=[PRICES, second])
-        self.assertAlmostEqual(result['material_total'], baseline['material_total']*2)
+        self.assertAlmostEqual(result['material_total'], baseline['material_total']*2 - 149.0)
         self.assertEqual(result['labor_total'], baseline['labor_total'])
         result, _, _ = run_app({"4'x8' sheathing sheets": 3, "4'x8' sheathing / sheet": 20,
                                 "4'x8' roof sheathing replacement labor / sheet": 15})

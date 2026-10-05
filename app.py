@@ -59,7 +59,7 @@ MATERIAL_FIELDS = [
     ("shingle_nails_price", '1-1/4" shingle nails', "box"),
     ("ridge_hip_nails_price", '2" ridge/hip nails', "roll"),
     ("wet_patch_price", "Henry Wet Patch", "tube"),
-    ("hidden_valley_price", "Hidden Valley", "roll"),
+    ("hidden_valley_price", "Hidden Valley", "50 LF roll"),
     ("w_valley_price", "W-Valley", "piece"),
     ("delivery_price", "Delivery", "job"),
     ("sheathing_price", "4'x8' sheathing", "sheet"),
@@ -98,6 +98,9 @@ with st.expander("Material Pricing", expanded=False):
     material_prices = {}
     invalid_columns = []
     for column, label, unit in MATERIAL_FIELDS:
+        if column == "hidden_valley_price":
+            material_prices[column] = 74.50
+            continue
         try:
             price = float(preset[column])
             if not math.isfinite(price) or price < 0:
@@ -109,9 +112,15 @@ with st.expander("Material Pricing", expanded=False):
         st.error("The selected preset needs valid nonnegative prices for: "
                  + ", ".join(invalid_columns))
         st.stop()
-    st.caption("Prices come from Supabase. The sheathing price remains editable for this estimate.")
+    st.caption("Prices come from Supabase except Hidden Valley, which defaults to $74.50 per 50 LF roll. Hidden Valley and sheathing prices are editable for this estimate.")
     for column, label, unit in MATERIAL_FIELDS:
-        if column != "sheathing_price":
+        if column == "hidden_valley_price":
+            material_prices[column] = st.number_input(
+                "Hidden Valley flashing / 50 LF roll", min_value=0.0,
+                value=74.50, step=0.50, format="%.2f",
+                key="hidden_valley_material_price",
+            )
+        elif column != "sheathing_price":
             st.write(f"{label}: ${material_prices[column]:,.2f} / {unit}")
     p["sheathing"] = st.number_input(
         "4'x8' sheathing / sheet", min_value=0.0,
