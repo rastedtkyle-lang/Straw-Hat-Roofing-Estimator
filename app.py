@@ -145,8 +145,6 @@ for key, label in fields:
     d[key] = st.number_input(label, min_value=0.0, value=float(d[key]), step=1.0, key=f"m_{key}")
 import math
 
-st.subheader("3. Material Takeoff")
-
 waste = st.number_input("Shingle waste %", value=6.0)
 order_squares = d["squares"] * (1 + waste / 100)
 shingle_bundles = math.ceil(order_squares * 3)
@@ -158,30 +156,20 @@ ridge_cap_bundles = math.ceil((d["ridge"] + d["hip"]) / 30)
 ridge_cap_cost = ridge_cap_bundles * p["ridge_material"]
 underlayment_rolls = math.ceil(d["squares"] / 10)
 underlayment_cost = underlayment_rolls * p["underlayment_material"]
-st.write(f"Shingles: {shingle_bundles} bundles")
 
-st.write(f"Starter: {starter_bundles} bundles")
 
-st.write(f"Ridge cap: {ridge_cap_bundles} bundles")
 
-st.write(f"Underlayment: {underlayment_rolls} rolls")
 ice_water_rolls = math.ceil((d["eave"] + (d["valley"] * 2)) / 65)
 ice_water_cost = ice_water_rolls * p["ice_water_material"]
-st.write(f"Ice & Water: {ice_water_rolls} rolls")
 drip_edge_pieces = math.ceil(d["drip"] / (119 / 12))
 drip_edge_cost = drip_edge_pieces * 12.00
-st.write(f"Drip edge: {drip_edge_pieces} pieces")
 step_flashing_pieces = math.ceil((d["step"] * 12) / 5)
 step_flashing_cost = step_flashing_pieces * 0.58
-st.write(f"Step flashing: {step_flashing_pieces} pieces")
 shingle_nail_boxes = math.ceil(d["squares"] / 15)
 shingle_nail_cost = shingle_nail_boxes * p["shingle_nails_material"]
-st.write(f'1-1/4" shingle nails: {shingle_nail_boxes} boxes')
 ridge_nail_rolls = math.ceil((d["ridge"] + d["hip"]) / 15)
 ridge_nail_cost = ridge_nail_rolls * 2.50
-st.write(f'2" ridge/hip nails: {ridge_nail_rolls} rolls')
 henry_tubes = math.ceil(d["squares"] / 10)
-st.write(f"Henry Wet Patch: {henry_tubes} tubes")
 henry_cost = henry_tubes * p["wet_patch_material"]
 valley_type = st.selectbox("Valley material", ["Hidden Valley", "W-Valley"])
 valley_feet = d["valley"]
