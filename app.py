@@ -1,10 +1,7 @@
 import re
-import math
-import hashlib
 from html import escape
 import streamlit as st
 from pypdf import PdfReader
-from supabase import create_client
 
 st.set_page_config(page_title="Straw Hat Roofing Estimator", page_icon="🏠", layout="centered")
 
@@ -24,108 +21,38 @@ st.title("🏠 Straw Hat Roofing")
 st.caption("EagleView PDF → measurements → your pricing → customer estimate")
 
 DEFAULT_PRICES = {
-    "roof": 300.0,
+    "roof": 325.0,
+    "ridge": 4.0,
+    "hip": 4.0,
+    "valley": 5.0,
     "drip": 2.0,
+    "flash": 5.0,
+    "step": 5.0,
     "other": 0.0,
-    "sheathing_labor": 0.0,
-    "ventilation_labor": 0.0,
-    "chimney_demolition_labor": 0.0,
-    "chimney_flashing_labor": 0.0,
+    "hidden_valley_material": 74.50,
 }
 
 if "prices" not in st.session_state:
     st.session_state.prices = DEFAULT_PRICES.copy()
 
-with st.expander("Labor Pricing", expanded=True):
+with st.expander("⚙️ Pricing", expanded=False):
     p = st.session_state.prices
-    p["roof"] = st.number_input("Roofing labor / square", min_value=0.0, value=p["roof"], step=5.0)
-    p["drip"] = st.number_input("Drip edge labor / LF", min_value=0.0, value=p["drip"], step=0.5)
-    p["sheathing_labor"] = st.number_input("4'x8' roof sheathing replacement labor / sheet", min_value=0.0, value=p.get("sheathing_labor", DEFAULT_PRICES["sheathing_labor"]), step=1.0)
-    p["ventilation_labor"] = st.number_input("Added ventilation labor / unit", min_value=0.0, value=p.get("ventilation_labor", DEFAULT_PRICES["ventilation_labor"]), step=1.0)
-    p["chimney_demolition_labor"] = st.number_input("Chimney demolition labor / chimney", min_value=0.0, value=p.get("chimney_demolition_labor", DEFAULT_PRICES["chimney_demolition_labor"]), step=1.0)
-    p["chimney_flashing_labor"] = st.number_input("Chimney flashing labor / chimney", min_value=0.0, value=p.get("chimney_flashing_labor", DEFAULT_PRICES["chimney_flashing_labor"]), step=1.0)
-    p["other"] = st.number_input("Other / job", min_value=0.0, value=p["other"], step=25.0)
-    st.caption("The roofing labor rate includes ridge cap, hip cap, valleys, regular flashing, and step flashing labor. Drip edge labor is charged separately. Material costs are added separately.")
-
-# Column names match the existing public.material_presets table.
-MATERIAL_FIELDS = [
-    ("shingles_price", "Shingles", "bundle"),
-    ("starter_price", "Starter", "bundle"),
-    ("ridge_cap_price", "Ridge cap", "bundle"),
-    ("underlayment_price", "Underlayment", "roll"),
-    ("ice_water_price", "Ice & Water", "roll"),
-    ("drip_edge_price", "Drip edge", "piece"),
-    ("step_flashing_price", "Step flashing", "piece"),
-    ("shingle_nails_price", '1-1/4" shingle nails', "box"),
-    ("ridge_hip_nails_price", '2" ridge/hip nails', "roll"),
-    ("wet_patch_price", "Henry Wet Patch", "tube"),
-    ("hidden_valley_price", "Hidden Valley", "50 LF roll"),
-    ("w_valley_price", "W-Valley", "piece"),
-    ("delivery_price", "Delivery", "job"),
-    ("sheathing_price", "4'x8' sheathing", "sheet"),
-    ("cap_staples_price", "Cap staples", "unit"),
-    ("staples_price", "Regular staples", "unit"),
-]
-
-
-@st.cache_data(ttl=60, show_spinner=False)
-def load_material_presets():
-    # Credentials stay on the server; never display connection exceptions.
-    client = create_client(
-        st.secrets["SUPABASE_URL"],
-        st.secrets["SUPABASE_PUBLISHABLE_KEY"],
-    )
-    return client.table("material_presets").select("*").execute().data
-
+    c1, c2 = st.columns(2)
+    p["roof"] = c1.number_input("Roofing system / square", min_value=0.0, value=p["roof"], step=5.0)
+    p["ridge"] = c2.number_input("Ridge cap / LF", min_value=0.0, value=p["ridge"], step=0.5)
+    p["hip"] = c1.number_input("Hip cap / LF", min_value=0.0, value=p["hip"], step=0.5)
+    p["valley"] = c2.number_input("Valley / LF", min_value=0.0, value=p["valley"], step=0.5)
+    p["drip"] = c1.number_input("Drip edge / LF", min_value=0.0, value=p["drip"], step=0.5)
+    p["flash"] = c2.number_input("Flashing / LF", min_value=0.0, value=p["flash"], step=0.5)
+    p["step"] = c1.number_input("Step flashing / LF", min_value=0.0, value=p["step"], step=0.5)
+    p["other"] = c2.number_input("Other / job", min_value=0.0, value=p["other"], step=25.0)
+    st.caption("These are temporary prototype prices. We will replace them with your real Straw Hat pricing rules.")
 
 with st.expander("Material Pricing", expanded=False):
-    try:
-        material_presets = load_material_presets()
-    except Exception:
-        st.error("Unable to load material pricing. Check the SUPABASE_URL and "
-                 "SUPABASE_PUBLISHABLE_KEY Streamlit secrets and read access to material_presets.")
-        st.stop()
-    if not material_presets:
-        st.error("No material presets are available. Check the table's rows and read permissions.")
-        st.stop()
-    preset_index = st.selectbox(
-        "Material preset", range(len(material_presets)),
-        format_func=lambda i: str(material_presets[i].get("name")
-                                  or material_presets[i].get("preset_name")
-                                  or f"Preset {i + 1}"),
-    )
-    preset = material_presets[preset_index]
-    material_prices = {}
-    invalid_columns = []
-    for column, label, unit in MATERIAL_FIELDS:
-        if column == "hidden_valley_price":
-            material_prices[column] = 74.50
-            continue
-        try:
-            price = float(preset[column])
-            if not math.isfinite(price) or price < 0:
-                raise ValueError
-            material_prices[column] = price
-        except (KeyError, TypeError, ValueError, OverflowError):
-            invalid_columns.append(column)
-    if invalid_columns:
-        st.error("The selected preset needs valid nonnegative prices for: "
-                 + ", ".join(invalid_columns))
-        st.stop()
-    st.caption("Prices come from Supabase except Hidden Valley, which defaults to $74.50 per 50 LF roll. Hidden Valley and sheathing prices are editable for this estimate.")
-    for column, label, unit in MATERIAL_FIELDS:
-        if column == "hidden_valley_price":
-            material_prices[column] = st.number_input(
-                "Hidden Valley flashing / 50 LF roll", min_value=0.0,
-                value=74.50, step=0.50, format="%.2f",
-                key="hidden_valley_material_price",
-            )
-        elif column != "sheathing_price":
-            st.write(f"{label}: ${material_prices[column]:,.2f} / {unit}")
-    p["sheathing"] = st.number_input(
-        "4'x8' sheathing / sheet", min_value=0.0,
-        value=material_prices["sheathing_price"], step=1.0,
-        key=f"sheathing_price_{preset_index}_{material_prices['sheathing_price']}",
+    p["hidden_valley_material"] = st.number_input(
+        "Hidden Valley flashing / 50 LF roll", min_value=0.0,
+        value=p.get("hidden_valley_material", 74.50), step=0.50, format="%.2f",
+        key="hidden_valley_material_price",
     )
 
 uploaded = st.file_uploader("📄 Upload EagleView Premium Report", type=["pdf"], help="Upload the EagleView PDF from your phone.")
@@ -158,7 +85,7 @@ def extract_eagleview(text):
         "rake": num(r"Rakes[†]?\s*=\s*([\d,]+)\s*ft", text),
         "eave": num(r"Eaves/Starter[‡]?\s*=\s*([\d,]+)\s*ft", text),
         "drip": num(r"Drip Edge \(Eaves \+ Rakes\)\s*=\s*([\d,]+)\s*ft", text),
-        "flashing": num(r"\bFlashing\s*=\s*([\d,]+)\s*ft", re.sub(r"\bStep\s+flashing\b", "", text, flags=re.I)),
+        "flashing": num(r"Flashing\s*=\s*([\d,]+)\s*ft", text),
         "step": num(r"Step flashing\s*=\s*([\d,]+)\s*ft", text),
         "pitch": m_pitch.group(1) if m_pitch else "",
         "penetrations": num(r"Total Penetrations\s*=\s*([\d,]+)", text),
@@ -175,10 +102,6 @@ try:
     d = extract_eagleview(text)
 except Exception as e:
     st.error(f"I couldn't read this PDF: {e}")
-    st.stop()
-
-if not 0 < d["sqft"] < float("inf"):
-    st.error("This report could not be read: no valid roof area was extracted. Please upload a readable EagleView report.")
     st.stop()
 
 st.subheader("1. EagleView")
@@ -198,57 +121,51 @@ fields = [
 ]
 for key, label in fields:
     d[key] = st.number_input(label, min_value=0.0, value=float(d[key]), step=1.0, key=f"m_{key}")
+import math
 
-st.subheader("3. Material Takeoff and Cost")
+st.subheader("3. Material Takeoff")
 
-job_key = hashlib.sha256(uploaded.getvalue()).hexdigest()
-
-waste = st.number_input("Shingle waste %", min_value=0.0, value=6.0)
-sheathing_sheets = st.number_input("4'x8' sheathing sheets", min_value=0, value=0, step=1)
-cap_staples_quantity = st.number_input("Cap staples — quantity", min_value=0, value=0, step=1, key=f"cap_staples_{job_key}")
-staples_quantity = st.number_input("Regular staples — quantity", min_value=0, value=0, step=1, key=f"staples_{job_key}")
-cap_staples_cost = cap_staples_quantity * material_prices["cap_staples_price"]
-staples_cost = staples_quantity * material_prices["staples_price"]
-# This is a job allowance, independent of misc_roof_penetrations_price (NULL).
-misc_roof_penetrations_cost = st.number_input(
-    "Misc. Roof Penetration Allowance ($)", min_value=0.0, value=0.0, step=1.0,
-    help="Enter the total allowance for this job. No preset price is used.",
-    key=f"penetration_allowance_{job_key}",
-)
-sheathing_cost = sheathing_sheets * p["sheathing"]
+waste = st.number_input("Shingle waste %", value=6.0)
 order_squares = d["squares"] * (1 + waste / 100)
 shingle_bundles = math.ceil(order_squares * 3)
-shingle_cost = shingle_bundles * material_prices["shingles_price"]
+shingle_cost = shingle_bundles * 39.50
 starter_bundles = math.ceil(d["eave"] / 100)
-starter_cost = starter_bundles * material_prices["starter_price"]
+starter_cost = starter_bundles * 79.50
 
 ridge_cap_bundles = math.ceil((d["ridge"] + d["hip"]) / 30)
-ridge_cap_cost = ridge_cap_bundles * material_prices["ridge_cap_price"]
-underlayment_rolls = math.ceil(max(0.0, d["squares"] * 100 - d["eave"] * 6) / 1000)
-underlayment_cost = underlayment_rolls * material_prices["underlayment_price"]
-ice_water_rolls = math.ceil((d["eave"] + (d["valley"] * 2)) / 66)
-ice_water_cost = ice_water_rolls * material_prices["ice_water_price"]
-drip_edge_pieces = math.ceil(d["drip"] / (119 / 12))
-drip_edge_cost = drip_edge_pieces * material_prices["drip_edge_price"]
-step_flashing_pieces = math.ceil((d["step"] * 12) / 5)
-step_flashing_cost = step_flashing_pieces * material_prices["step_flashing_price"]
-shingle_nail_boxes = math.ceil(d["squares"] / 15)
-shingle_nail_cost = shingle_nail_boxes * material_prices["shingle_nails_price"]
-ridge_nail_rolls = math.ceil((d["ridge"] + d["hip"]) / 15)
-ridge_nail_cost = ridge_nail_rolls * material_prices["ridge_hip_nails_price"]
-henry_tubes = math.ceil(d["squares"] / 10)
-henry_cost = henry_tubes * material_prices["wet_patch_price"]
+ridge_cap_cost = ridge_cap_bundles * 87.50
+underlayment_rolls = math.ceil(d["squares"] / 10)
+underlayment_cost = underlayment_rolls * 77.50
+st.write(f"Shingles: {shingle_bundles} bundles")
 
-valley_material = st.selectbox("Valley material", ["Hidden Valley", "W-Valley"])
-if valley_material == "Hidden Valley":
-    valley_material_quantity = math.ceil(d["valley"] / 50)
-    valley_material_unit = "rolls"
-    valley_material_cost = valley_material_quantity * material_prices["hidden_valley_price"]
-else:
-    valley_material_quantity = math.ceil(d["valley"] / 10)
-    valley_material_unit = "pieces"
-    valley_material_cost = valley_material_quantity * material_prices["w_valley_price"]
-delivery_cost = material_prices["delivery_price"]
+st.write(f"Starter: {starter_bundles} bundles")
+
+st.write(f"Ridge cap: {ridge_cap_bundles} bundles")
+
+st.write(f"Underlayment: {underlayment_rolls} rolls")
+ice_water_rolls = math.ceil((d["eave"] + (d["valley"] * 2)) / 66)
+ice_water_cost = ice_water_rolls * 77.50
+st.write(f"Ice & Water: {ice_water_rolls} rolls")
+drip_edge_pieces = math.ceil(d["drip"] / (119 / 12))
+drip_edge_cost = drip_edge_pieces * 12.00
+st.write(f"Drip edge: {drip_edge_pieces} pieces")
+step_flashing_pieces = math.ceil((d["step"] * 12) / 5)
+step_flashing_cost = step_flashing_pieces * 0.58
+st.write(f"Step flashing: {step_flashing_pieces} pieces")
+shingle_nail_boxes = math.ceil(d["squares"] / 15)
+shingle_nail_cost = shingle_nail_boxes * 35.00
+st.write(f'1-1/4" shingle nails: {shingle_nail_boxes} boxes')
+ridge_nail_rolls = math.ceil((d["ridge"] + d["hip"]) / 15)
+ridge_nail_cost = ridge_nail_rolls * 2.50
+st.write(f'2" ridge/hip nails: {ridge_nail_rolls} rolls')
+henry_tubes = math.ceil(d["squares"] / 10)
+st.write(f"Henry Wet Patch: {henry_tubes} tubes")
+henry_cost = henry_tubes * 12.00
+valley_type = st.selectbox("Valley material", ["Hidden Valley", "W-Valley"])
+valley_feet = d["valley"]
+valley_cost = math.ceil(valley_feet / 50) * p["hidden_valley_material"] if valley_type =="Hidden Valley" else math.ceil(valley_feet / 10) *30.00
+delivery_cost = 150.00
+st.markdown("### Material Cost Breakdown")
 
 st.write(f"Shingles: {shingle_bundles} bundles — ${shingle_cost:,.2f}")
 
@@ -269,12 +186,9 @@ st.write(f'1-1/4" shingle nails: {shingle_nail_boxes} boxes — ${shingle_nail_c
 st.write(f'2" ridge/hip nails: {ridge_nail_rolls} rolls — ${ridge_nail_cost:,.2f}')
 
 st.write(f"Henry Wet Patch: {henry_tubes} tubes — ${henry_cost:,.2f}")
-st.write(f"{valley_material}: {valley_material_quantity} {valley_material_unit} — ${valley_material_cost:,.2f}")
+
+st.write(f"{valley_type}: {valley_feet:.0f} LF - ${valley_cost:,.2f}")
 st.write(f"Delivery: ${delivery_cost:,.2f}")
-st.write(f"4'x8' sheathing: {sheathing_sheets} sheets — ${sheathing_cost:,.2f}")
-st.write(f"Cap staples: {cap_staples_quantity} units — ${cap_staples_cost:,.2f}")
-st.write(f"Regular staples: {staples_quantity} units — ${staples_cost:,.2f}")
-st.write(f"Misc. Roof Penetration Allowance: ${misc_roof_penetrations_cost:,.2f}")
 material_total = (
     shingle_cost
     + starter_cost
@@ -286,43 +200,40 @@ material_total = (
     + shingle_nail_cost
     + ridge_nail_cost
     + henry_cost
-    + valley_material_cost
+    + valley_cost
     + delivery_cost
-    + sheathing_cost
-    + misc_roof_penetrations_cost
-    + cap_staples_cost
-    + staples_cost
 )
 
 st.markdown(f"### Material Total: ${material_total:,.2f}")
-with st.expander("Optional extra labor", expanded=False):
-    st.caption("Enter extra labor quantities here and set their rates in Labor Pricing. Sheathing labor uses the sheathing sheets quantity from Material Takeoff and Cost. Other labor below is added to any existing Other / job charge.")
-    ventilation_labor_quantity = st.number_input("Added ventilation labor — quantity", min_value=0, value=0, step=1)
-    chimney_demolition_quantity = st.number_input("Chimney demolition labor — quantity", min_value=0, value=0, step=1)
-    chimney_flashing_quantity = st.number_input("Chimney flashing labor — quantity", min_value=0, value=0, step=1)
-    other_extra_labor = st.number_input("Other labor — amount ($)", min_value=0.0, value=0.0, step=1.0)
-
 st.subheader("4. Customer")
 customer = st.text_input("Customer name", placeholder="John Smith")
-customer_address = st.text_input("Property address", value=d["address"])
 email = st.text_input("Customer email (optional)", placeholder="customer@example.com")
 shingle = st.selectbox("Roofing system", ["Architectural Shingle", "Designer Shingle", "3-Tab Shingle"])
 
 p = st.session_state.prices
 
-material_cost_total = material_total
+material_cost_total = (
+
+    shingle_cost + starter_cost + ridge_cap_cost + underlayment_cost +
+
+    ice_water_cost + drip_edge_cost + step_flashing_cost +
+
+    shingle_nail_cost + ridge_nail_cost + henry_cost
+    + (valley_cost if valley_type == "Hidden Valley" else 0.0)
+
+)
 
 st.write(f"Estimated material cost: ${material_cost_total:,.2f}")
 p = st.session_state.prices
 lines = [
-    ("Roofing labor", f'{d["squares"]:.2f} squares', d["squares"] * p["roof"]),
-    ("Drip edge labor", f'{d["drip"]:.0f} LF', d["drip"] * p["drip"]),
+    ("Roofing system", f'{d["squares"]:.2f} squares', d["squares"] * p["roof"]),
+    ("Ridge cap", f'{d["ridge"]:.0f} LF', d["ridge"] * p["ridge"]),
+    ("Hip cap", f'{d["hip"]:.0f} LF', d["hip"] * p["hip"]),
+    ("Valley", f'{d["valley"]:.0f} LF', d["valley"] * p["valley"]),
+    ("Drip edge", f'{d["drip"]:.0f} LF', d["drip"] * p["drip"]),
+    ("Flashing", f'{d["flashing"]:.0f} LF', d["flashing"] * p["flash"]),
+    ("Step flashing", f'{d["step"]:.0f} LF', d["step"] * p["step"]),
     ("Other", "1 job", p["other"]),
-    ("4'x8' roof sheathing replacement labor", f"{sheathing_sheets} sheets", sheathing_sheets * p["sheathing_labor"]),
-    ("Added ventilation labor", f"{ventilation_labor_quantity} units", ventilation_labor_quantity * p["ventilation_labor"]),
-    ("Chimney demolition labor", f"{chimney_demolition_quantity} chimneys", chimney_demolition_quantity * p["chimney_demolition_labor"]),
-    ("Chimney flashing labor", f"{chimney_flashing_quantity} chimneys", chimney_flashing_quantity * p["chimney_flashing_labor"]),
-    ("Other labor", "1 job", other_extra_labor),
 ]
 lines = [x for x in lines if x[2] > 0]
 total = sum(x[2] for x in lines)
@@ -357,7 +268,7 @@ th,td{{padding:10px;border-bottom:1px solid #ddd;text-align:left}} td:last-child
 <div class='no-print'><button class='btn' onclick='window.print()'>Print / Save as PDF</button><hr></div>
 <h1>Straw Hat Roofing and Construction</h1><div class='muted'>Roof Replacement Proposal</div>
 <p><b>Customer:</b> {escape(customer or 'Customer')}<br>
-<b>Property:</b> {escape(customer_address or 'Address')}<br>
+<b>Property:</b> {escape(d["address"] or 'Address')}<br>
 <b>Roofing system:</b> {escape(shingle)}<br>
 <b>Predominant pitch:</b> {escape(d["pitch"] or '—')}<br>
 <b>EagleView report:</b> {escape(d["report"] or '—')}</p>
@@ -373,8 +284,8 @@ th,td{{padding:10px;border-bottom:1px solid #ddd;text-align:left}} td:last-child
 </body></html>
 """
 
-st.markdown(f"**Customer:** {customer or 'Customer'}  \n**Property:** {customer_address or 'Address'}")
-st.dataframe([{"Item": a, "Quantity": b, "Amount": f"${c:,.2f}"} for a,b,c in lines], column_order=["Item", "Quantity", "Amount"], use_container_width=True, hide_index=True)
+st.markdown(f"**Customer:** {customer or 'Customer'}  \n**Property:** {d['address'] or 'Address'}")
+st.dataframe([{"Item": a, "Quantity": b, "Amount": f"${c:,.2f}"} for a,b,c in lines], use_container_width=True, hide_index=True)
 st.markdown(f"## Total: ${grand_total:,.2f}")
 
 st.download_button(

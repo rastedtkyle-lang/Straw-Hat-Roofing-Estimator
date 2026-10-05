@@ -2,20 +2,15 @@
 import io
 from pathlib import Path
 import runpy
+import subprocess
 import sys
 from types import ModuleType, SimpleNamespace
 import unittest
 from unittest.mock import MagicMock, patch
 
 APP = Path(__file__).resolve().parent / 'app.py'
-PRICES = dict(zip(
-    ['shingles_price', 'starter_price', 'ridge_cap_price', 'underlayment_price',
-     'ice_water_price', 'drip_edge_price', 'step_flashing_price', 'shingle_nails_price',
-     'ridge_hip_nails_price', 'wet_patch_price', 'hidden_valley_price', 'w_valley_price',
-     'delivery_price', 'sheathing_price', 'cap_staples_price', 'staples_price'],
-    [39.50, 79.50, 87.50, 77.50, 77.50, 44.50, .58, 35, 2.50, 12, 74.50, 45.50,
-     150, 13, 50, 12],
-), misc_roof_penetrations_price=None)
+# The newer GitHub version retained by this reconciliation.
+REMOTE_BASE = 'f53051af8ec9f97fac9968704d440e41ed2594f0'
 REPORT = '''Premium Report 9/30/2026 123 Main St Report: TEST-1
 Total Area (All Pitches) = 2000 sq ft
 Predominant Pitch = 6/12
@@ -25,131 +20,99 @@ Drip Edge (Eaves + Rakes) = 160 ft
 Flashing = 10 ft Step flashing = 20 ft Total Penetrations = 3'''
 
 
-class StopApp(BaseException):
-    pass
-
-
 class State(dict):
     __getattr__ = dict.__getitem__
     __setattr__ = dict.__setitem__
 
 
-def run_app(inputs=None, rows=None, failure=None, upload=b'job-one'):
+def run_app(inputs=None, source=None):
     inputs = inputs or {}
     st = MagicMock()
     st.session_state = State()
-    st.secrets = {'SUPABASE_URL': 'https://example.supabase.co',
-                  'SUPABASE_PUBLISHABLE_KEY': 'test-only-placeholder'}
-    st.cache_data.side_effect = lambda **kw: lambda f: f
     st.number_input.side_effect = lambda label, **kw: inputs.get(label, kw['value'])
     st.selectbox.side_effect = lambda label, options, **kw: inputs.get(label, list(options)[0])
     st.text_input.side_effect = lambda label, **kw: kw.get('value', '')
     st.text_area.side_effect = lambda label, value, **kw: value
-    st.file_uploader.return_value = io.BytesIO(upload)
-    st.columns.return_value = [MagicMock() for _ in range(4)]
-    st.stop.side_effect = StopApp
+    st.file_uploader.return_value = io.BytesIO(b'job-one')
+    def columns(count):
+        result = [MagicMock() for _ in range(count)]
+        for column in result:
+            column.number_input.side_effect = st.number_input.side_effect
+        return result
+    st.columns.side_effect = columns
     pdf = ModuleType('pypdf')
     pdf.PdfReader = lambda _: SimpleNamespace(pages=[SimpleNamespace(extract_text=lambda: REPORT)])
-    sb = ModuleType('supabase')
-    sb.create_client = MagicMock()
-    query = sb.create_client.return_value.table.return_value.select.return_value
-    query.execute.return_value = SimpleNamespace(data=[PRICES.copy()] if rows is None else rows)
-    query.execute.side_effect = failure
-    with patch.dict(sys.modules, {'streamlit': st, 'pypdf': pdf, 'supabase': sb}):
-        try:
+    with patch.dict(sys.modules, {'streamlit': st, 'pypdf': pdf}):
+        if source is None:
             result = runpy.run_path(str(APP))
-        except StopApp:
-            result = None
-    return result, st, sb
+        else:
+            result = {}
+            exec(compile(source, 'remote_app.py', 'exec'), result)
+    return result, st
 
 
 class EstimatorTests(unittest.TestCase):
-    def test_existing_takeoff_and_hidden_valley(self):
-        result, st, sb = run_app()
-        # Hand-calculated takeoff for the report above, including 6% waste.
-        expected = (64*39.50 + 79.50 + 2*87.50 + 2*77.50 + 4*77.50
-                    + 17*44.50 + 48*.58 + 2*35 + 4*2.50 + 2*12 + 2*74.50 + 150)
-        self.assertAlmostEqual(result['material_total'], expected)
-        self.assertEqual(result['labor_total'], 20*300 + 160*2)
-        self.assertAlmostEqual(result['grand_total'], expected + 6320)
-        self.assertEqual(result['misc_roof_penetrations_cost'], 0)
-        sb.create_client.assert_called_once_with(st.secrets['SUPABASE_URL'],
-                                                st.secrets['SUPABASE_PUBLISHABLE_KEY'])
-        sb.create_client.return_value.table.assert_called_once_with('material_presets')
-
-    def test_w_valley_staples_allowance_counted_once_in_export(self):
-        baseline, _, _ = run_app()
-        result, st, _ = run_app({'Valley material': 'W-Valley', 'Cap staples — quantity': 2,
-                                'Regular staples — quantity': 3,
-                                'Misc. Roof Penetration Allowance ($)': 123.45})
-        delta = 6*45.50 - 2*74.50 + 2*50 + 3*12 + 123.45
-        self.assertEqual(result['valley_material_quantity'], 6)
-        self.assertAlmostEqual(result['grand_total'] - baseline['grand_total'], delta)
-        self.assertEqual(result['material_cost_total'], result['material_total'])
-        self.assertIn(f"Grand Total: ${result['grand_total']:,.2f}", result['proposal_html'])
-        st.write.assert_any_call('Cap staples: 2 units — $100.00')
-        st.write.assert_any_call('Regular staples: 3 units — $36.00')
-
-    def test_zero_valley(self):
-        for valley in ['Hidden Valley', 'W-Valley']:
-            result, _, _ = run_app({'Valley LF': 0, 'Valley material': valley})
-            self.assertEqual(result['valley_material_cost'], 0)
-
     def test_hidden_valley_rounding_and_breakdown(self):
-        for feet, rolls in [(0, 0), (1, 1), (50, 1), (50.01, 2), (51, 2), (100, 2), (101, 3)]:
+        for feet, cost in [(0, 0), (1, 74.50), (50, 74.50), (50.01, 149),
+                           (51, 149), (100, 149), (101, 223.50)]:
             with self.subTest(feet=feet):
-                result, st, _ = run_app({'Valley LF': feet})
-                self.assertEqual(result['valley_material_quantity'], rolls)
-                self.assertEqual(result['valley_material_cost'], rolls * 74.50)
-                st.write.assert_any_call(f'Hidden Valley: {rolls} rolls — ${rolls * 74.50:,.2f}')
+                result, st = run_app({'Valley LF': feet})
+                self.assertEqual(result['valley_cost'], cost)
+                st.write.assert_any_call(f'Hidden Valley: {feet:.0f} LF - ${cost:,.2f}')
 
-    def test_hidden_valley_editable_price_and_default(self):
-        baseline, _, _ = run_app()
-        result, st, _ = run_app({'Hidden Valley flashing / 50 LF roll': 80.0})
-        self.assertEqual(result['valley_material_cost'], 160.0)
-        self.assertAlmostEqual(result['material_total'] - baseline['material_total'], 11.0)
-        self.assertAlmostEqual(result['grand_total'] - baseline['grand_total'], 11.0)
-        st.write.assert_any_call('Hidden Valley: 2 rolls — $160.00')
-        for price in [None, 999]:
-            result, _, _ = run_app(rows=[dict(PRICES, hidden_valley_price=price)])
-            self.assertEqual(result['valley_material_cost'], 149.0)
-        result, _, _ = run_app({'Valley material': 'W-Valley',
-                                'Hidden Valley flashing / 50 LF roll': 80.0})
-        self.assertEqual(result['valley_material_quantity'], 6)
-        self.assertEqual(result['valley_material_cost'], 6 * 45.50)
+    def test_hidden_valley_default_and_totals(self):
+        result, st = run_app()
+        other_materials = (64*39.50 + 79.50 + 2*87.50 + 2*77.50 + 4*77.50
+                           + 17*12 + 48*.58 + 2*35 + 4*2.50 + 2*12)
+        self.assertAlmostEqual(result['material_total'], other_materials + 149 + 150)
+        # Preserve the current version's delivery handling in the proposal.
+        self.assertAlmostEqual(result['material_cost_total'], other_materials + 149)
+        self.assertEqual(result['labor_total'], 20*325 + 40*4 + 20*4 + 51*5 + 160*2 + 10*5 + 20*5)
+        self.assertAlmostEqual(result['grand_total'], result['labor_total'] + other_materials + 149)
+        self.assertIn(f"Materials: ${result['material_cost_total']:,.2f}", result['proposal_html'])
+        self.assertIn(f"Grand Total: ${result['grand_total']:,.2f}", result['proposal_html'])
+        price_input = next(call for call in st.number_input.call_args_list
+                           if call.args[0] == 'Hidden Valley flashing / 50 LF roll')
+        self.assertEqual(price_input.kwargs['value'], 74.50)
+        self.assertEqual(price_input.kwargs['min_value'], 0.0)
 
-    def test_selected_preset_and_sheathing_override(self):
-        second = {key: value*2 if value is not None else None for key, value in PRICES.items()}
-        baseline, _, _ = run_app()
-        result, _, _ = run_app({'Material preset': 1}, rows=[PRICES, second])
-        self.assertAlmostEqual(result['material_total'], baseline['material_total']*2 - 149.0)
-        self.assertEqual(result['labor_total'], baseline['labor_total'])
-        result, _, _ = run_app({"4'x8' sheathing sheets": 3, "4'x8' sheathing / sheet": 20,
-                                "4'x8' roof sheathing replacement labor / sheet": 15})
-        self.assertEqual(result['sheathing_cost'], 60)
-        self.assertAlmostEqual(result['grand_total'] - baseline['grand_total'], 105)
+    def test_hidden_valley_edited_price_reaches_all_totals(self):
+        baseline, _ = run_app()
+        for price in [0.0, 80.0, 99.99]:
+            with self.subTest(price=price):
+                result, st = run_app({'Hidden Valley flashing / 50 LF roll': price})
+                self.assertEqual(result['valley_cost'], 2*price)
+                for total in ['material_total', 'material_cost_total', 'grand_total']:
+                    self.assertAlmostEqual(result[total] - baseline[total], 2*price - 149)
+                self.assertEqual(result['labor_total'], baseline['labor_total'])
+                st.write.assert_any_call(f'Hidden Valley: 51 LF - ${2*price:,.2f}')
 
-    def test_missing_invalid_prices_and_connection_errors_stop_estimate(self):
-        for value in [None, -1, 'bad', float('nan'), float('inf')]:
-            result, st, _ = run_app(rows=[dict(PRICES, shingles_price=value)])
-            self.assertIsNone(result)
-            self.assertIn('shingles_price', str(st.error.call_args))
-        result, st, _ = run_app(rows=[])
-        self.assertIsNone(result)
-        result, st, _ = run_app(failure=RuntimeError('sensitive-exception-details'))
-        self.assertIsNone(result)
-        self.assertNotIn('sensitive-exception-details', str(st.error.call_args))
+    def test_w_valley_rounding_and_price_unchanged(self):
+        for feet, cost in [(0, 0), (1, 30), (10, 30), (11, 60), (51, 180)]:
+            with self.subTest(feet=feet):
+                result, st = run_app({'Valley LF': feet, 'Valley material': 'W-Valley',
+                                      'Hidden Valley flashing / 50 LF roll': 999.0})
+                self.assertEqual(result['valley_cost'], cost)
+                st.write.assert_any_call(f'W-Valley: {feet:.0f} LF - ${cost:,.2f}')
 
-    def test_allowance_is_independent_of_database_and_new_report(self):
-        result, st, _ = run_app(rows=[dict(PRICES, misc_roof_penetrations_price=999)])
-        self.assertEqual(result['misc_roof_penetrations_cost'], 0)
-        _, other_st, _ = run_app(upload=b'job-two')
-        def allowance_key(mock):
-            return next(call.kwargs['key'] for call in mock.number_input.call_args_list
-                        if call.args[0] == 'Misc. Roof Penetration Allowance ($)')
-        self.assertNotEqual(allowance_key(st), allowance_key(other_st))
+    def test_newer_github_calculations_preserved(self):
+        source = subprocess.check_output(['git', 'show', f'{REMOTE_BASE}:app.py'], cwd=APP.parent).decode('utf-8')
+        for valley in ['Hidden Valley', 'W-Valley']:
+            with self.subTest(valley=valley):
+                inputs = {'Valley material': valley}
+                previous, _ = run_app(inputs, source=source)
+                current, _ = run_app(inputs)
+                # Compare every numeric calculation from GitHub, allowing only
+                # the requested Hidden Valley addition to customer totals.
+                for name, value in previous.items():
+                    if isinstance(value, (int, float)):
+                        delta = 149 if valley == 'Hidden Valley' and name in ['material_cost_total', 'grand_total'] else 0
+                        self.assertAlmostEqual(current[name], value + delta, msg=name)
+                self.assertEqual(current['lines'], previous['lines'])
+                self.assertEqual(current['d'], previous['d'])
+                if valley == 'W-Valley':
+                    self.assertEqual(current['proposal_html'], previous['proposal_html'])
 
 
 if __name__ == '__main__':
     unittest.main()
-
